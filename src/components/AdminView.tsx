@@ -72,6 +72,14 @@ export default function AdminView({
   const [newCourtDesc, setNewCourtDesc] = useState('');
   const [newCourtImg, setNewCourtImg] = useState('https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&q=80&w=800');
   const [newCourtCount, setNewCourtCount] = useState<number>(1);
+  
+  // Specific new pricing schemes for new court registration
+  const [newPriceNoLights, setNewPriceNoLights] = useState<number>(60000);
+  const [newPriceLightsMonthlyDaytime, setNewPriceLightsMonthlyDaytime] = useState<number>(80000);
+  const [newPriceLightsMonthlyEvening, setNewPriceLightsMonthlyEvening] = useState<number>(100000);
+  const [newPriceLightsCasual, setNewPriceLightsCasual] = useState<number>(120000);
+  const [newPriceRacketRental, setNewPriceRacketRental] = useState<number>(30000);
+  const [newPriceBallRental, setNewPriceBallRental] = useState<number>(30000);
 
   // Edit Court states
   const [showEditCourtModal, setShowEditCourtModal] = useState(false);
@@ -86,6 +94,14 @@ export default function AdminView({
   const [editCourtDesc, setEditCourtDesc] = useState('');
   const [editCourtImg, setEditCourtImg] = useState('');
   const [editCourtCount, setEditCourtCount] = useState<number>(1);
+
+  // Specific new pricing schemes for court editing
+  const [editPriceNoLights, setEditPriceNoLights] = useState<number>(60000);
+  const [editPriceLightsMonthlyDaytime, setEditPriceLightsMonthlyDaytime] = useState<number>(80000);
+  const [editPriceLightsMonthlyEvening, setEditPriceLightsMonthlyEvening] = useState<number>(100000);
+  const [editPriceLightsCasual, setEditPriceLightsCasual] = useState<number>(120000);
+  const [editPriceRacketRental, setEditPriceRacketRental] = useState<number>(30000);
+  const [editPriceBallRental, setEditPriceBallRental] = useState<number>(30000);
 
   // Local settings form state for Bank config
   const [localBankName, setLocalBankName] = useState(bankConfig.bankName || '');
@@ -253,6 +269,15 @@ export default function AdminView({
     setEditCourtDesc(court.description);
     setEditCourtImg(court.image);
     setEditCourtCount(court.courtCount || 1);
+
+    // Populate new pricing properties with correct fallbacks
+    setEditPriceNoLights(court.priceNoLights !== undefined ? court.priceNoLights : 60000);
+    setEditPriceLightsMonthlyDaytime(court.priceLightsMonthlyDaytime !== undefined ? court.priceLightsMonthlyDaytime : 80000);
+    setEditPriceLightsMonthlyEvening(court.priceLightsMonthlyEvening !== undefined ? court.priceLightsMonthlyEvening : 100000);
+    setEditPriceLightsCasual(court.priceLightsCasual !== undefined ? court.priceLightsCasual : 120000);
+    setEditPriceRacketRental(court.priceRacketRental !== undefined ? court.priceRacketRental : 30000);
+    setEditPriceBallRental(court.priceBallRental !== undefined ? court.priceBallRental : 30000);
+
     setShowEditCourtModal(true);
   };
 
@@ -269,6 +294,12 @@ export default function AdminView({
       hasLights: editCourtLights,
       priceDaytime: Number(editCourtPriceDay),
       priceEvening: Number(editCourtPriceEve),
+      priceNoLights: Number(editPriceNoLights),
+      priceLightsMonthlyDaytime: Number(editPriceLightsMonthlyDaytime),
+      priceLightsMonthlyEvening: Number(editPriceLightsMonthlyEvening),
+      priceLightsCasual: Number(editPriceLightsCasual),
+      priceRacketRental: Number(editPriceRacketRental),
+      priceBallRental: Number(editPriceBallRental),
       description: editCourtDesc.trim(),
       image: editCourtImg || 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&q=80&w=800',
       courtCount: Number(editCourtCount),
@@ -361,6 +392,12 @@ export default function AdminView({
       hasLights: newCourtLights,
       priceDaytime: Number(newCourtPriceDay),
       priceEvening: Number(newCourtPriceEve),
+      priceNoLights: Number(newPriceNoLights),
+      priceLightsMonthlyDaytime: Number(newPriceLightsMonthlyDaytime),
+      priceLightsMonthlyEvening: Number(newPriceLightsMonthlyEvening),
+      priceLightsCasual: Number(newPriceLightsCasual),
+      priceRacketRental: Number(newPriceRacketRental),
+      priceBallRental: Number(newPriceBallRental),
       rating: 4.8,
       image: newCourtImg || 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&q=80&w=800',
       description: newCourtDesc.trim() || 'Sân pickleball được thiết kế hiện đại, đạt tiêu chuẩn chất lượng cao, phục vụ mọi đối tượng người chơi.',
@@ -376,6 +413,12 @@ export default function AdminView({
     setNewCourtDesc('');
     setNewCourtImg('https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&q=80&w=800');
     setNewCourtCount(1);
+    setNewPriceNoLights(60000);
+    setNewPriceLightsMonthlyDaytime(80000);
+    setNewPriceLightsMonthlyEvening(100000);
+    setNewPriceLightsCasual(120000);
+    setNewPriceRacketRental(30000);
+    setNewPriceBallRental(30000);
     setShowAddCourtModal(false);
   };
 
@@ -611,13 +654,35 @@ export default function AdminView({
                           {/* Court & Play Date slot range */}
                           <td className="p-4">
                             <div className="font-bold text-slate-800">{booking.courtName}</div>
-                            <div className="text-xs font-semibold text-slate-900 mt-0.5 flex items-center space-x-1">
+                            <div className="text-xs font-semibold text-slate-900 mt-0.5 flex flex-wrap gap-1 items-center">
                               <span className="bg-slate-100 border border-slate-250 font-extrabold text-slate-900 px-1.5 py-0.5 rounded">
                                 {ConvertVietnamDate(booking.date)}
                               </span>
-                              <span className="bg-lime-100 font-black text-slate-900 px-1.5 py-0.5 rounded">
+                              <span className="bg-lime-100 font-black text-slate-900 px-1.5 py-0.5 rounded mr-1">
                                 {booking.timeSlot}
                               </span>
+                            </div>
+                            
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              {booking.useLights !== undefined && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-extrabold ${
+                                  booking.useLights 
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                                    : 'bg-slate-100 text-slate-500'
+                                }`}>
+                                  ☀️ {booking.useLights ? 'Dùng đèn đêm' : 'Không dùng đèn'}
+                                </span>
+                              )}
+                              {booking.rentalType !== undefined && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-600 rounded font-bold">
+                                  👥 {booking.rentalType === 'monthly' ? 'Thuê cố định' : 'Thuê lẻ vãng lai'}
+                                </span>
+                              )}
+                              {(booking.rentRackets || booking.rentBalls) && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-lime-50 border border-lime-200/50 text-slate-700 rounded font-semibold whitespace-nowrap">
+                                  🛍️ {[booking.rentRackets ? 'Thuê vợt' : null, booking.rentBalls ? 'Mượn bóng' : null].filter(Boolean).join(', ')}
+                                </span>
+                              )}
                             </div>
                           </td>
 
@@ -1253,31 +1318,96 @@ export default function AdminView({
                   />
                 </div>
 
-                {/* Price specs daytime & nighttime */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Giá ban ngàyđ/h *</label>
-                    <input
-                      type="number"
-                      required
-                      min={10000}
-                      step={10000}
-                      value={newCourtPriceDay}
-                      onChange={(e) => setNewCourtPriceDay(Number(e.target.value))}
-                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-2.5 text-sm focus:ring-1 focus:ring-lime-500 outline-none"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Giá giờ tốiđ/h *</label>
-                    <input
-                      type="number"
-                      required
-                      min={10000}
-                      step={10000}
-                      value={newCourtPriceEve}
-                      onChange={(e) => setNewCourtPriceEve(Number(e.target.value))}
-                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-2.5 text-sm focus:ring-1 focus:ring-lime-500 outline-none"
-                    />
+                {/* Price specs detailed configurations */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-zinc-200/60 space-y-3">
+                  <span className="text-[11px] font-black uppercase text-zinc-700 tracking-wider block">Bảng giá chi tiết & Phí dịch vụ đi kèm</span>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block">Giá không dùng đèn (đ/h) *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={5000}
+                        value={newPriceNoLights}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setNewPriceNoLights(val);
+                          setNewCourtPriceDay(val); // Backward compatibility
+                        }}
+                        className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-xs font-bold focus:ring-1 focus:ring-lime-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block">Giá thắp đèn - Khách thuê lẻ (đ/h) *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={5000}
+                        value={newPriceLightsCasual}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setNewPriceLightsCasual(val);
+                          setNewCourtPriceEve(val); // Backward compatibility
+                        }}
+                        className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-xs font-bold focus:ring-1 focus:ring-lime-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block">Giá đèn cố định thg - Sáng (5-17h/đ) *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={5000}
+                        value={newPriceLightsMonthlyDaytime}
+                        onChange={(e) => setNewPriceLightsMonthlyDaytime(Number(e.target.value))}
+                        className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-xs font-bold focus:ring-1 focus:ring-lime-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block">Giá đèn cố định thg - Tối (17-22h/đ) *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={5000}
+                        value={newPriceLightsMonthlyEvening}
+                        onChange={(e) => setNewPriceLightsMonthlyEvening(Number(e.target.value))}
+                        className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-xs font-bold focus:ring-1 focus:ring-lime-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block">Phí Thuê vợt (đ/buổi) *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={5000}
+                        value={newPriceRacketRental}
+                        onChange={(e) => setNewPriceRacketRental(Number(e.target.value))}
+                        className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-xs font-bold focus:ring-1 focus:ring-lime-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block">Phí Thuê rổ bóng tập (đ/buổi) *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={5000}
+                        value={newPriceBallRental}
+                        onChange={(e) => setNewPriceBallRental(Number(e.target.value))}
+                        className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-xs font-bold focus:ring-1 focus:ring-lime-500 outline-none"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -1450,31 +1580,96 @@ export default function AdminView({
                   />
                 </div>
 
-                {/* Price specs daytime & nighttime */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Giá ban ngày đ/h *</label>
-                    <input
-                      type="number"
-                      required
-                      min={10000}
-                      step={10000}
-                      value={editCourtPriceDay}
-                      onChange={(e) => setEditCourtPriceDay(Number(e.target.value))}
-                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-2.5 text-sm focus:ring-1 focus:ring-lime-500 outline-none font-bold"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Giá giờ tối đ/h *</label>
-                    <input
-                      type="number"
-                      required
-                      min={10000}
-                      step={10000}
-                      value={editCourtPriceEve}
-                      onChange={(e) => setEditCourtPriceEve(Number(e.target.value))}
-                      className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-2.5 text-sm focus:ring-1 focus:ring-lime-500 outline-none font-bold"
-                    />
+                {/* Price specs detailed configurations */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-zinc-200/60 space-y-3">
+                  <span className="text-[11px] font-black uppercase text-zinc-700 tracking-wider block">Bảng giá chi tiết & Phí dịch vụ đi kèm</span>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block">Giá không dùng đèn (đ/h) *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={5000}
+                        value={editPriceNoLights}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setEditPriceNoLights(val);
+                          setEditCourtPriceDay(val); // Backward compatibility
+                        }}
+                        className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-xs font-bold focus:ring-1 focus:ring-lime-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block">Giá thắp đèn - Khách thuê lẻ (đ/h) *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={5000}
+                        value={editPriceLightsCasual}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setEditPriceLightsCasual(val);
+                          setEditCourtPriceEve(val); // Backward compatibility
+                        }}
+                        className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-xs font-bold focus:ring-1 focus:ring-lime-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block">Giá đèn cố định thg - Sáng (5-17h/đ) *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={5000}
+                        value={editPriceLightsMonthlyDaytime}
+                        onChange={(e) => setEditPriceLightsMonthlyDaytime(Number(e.target.value))}
+                        className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-xs font-bold focus:ring-1 focus:ring-lime-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block">Giá đèn cố định thg - Tối (17-22h/đ) *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={5000}
+                        value={editPriceLightsMonthlyEvening}
+                        onChange={(e) => setEditPriceLightsMonthlyEvening(Number(e.target.value))}
+                        className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-xs font-bold focus:ring-1 focus:ring-lime-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block">Phí Thuê vợt (đ/buổi) *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={5000}
+                        value={editPriceRacketRental}
+                        onChange={(e) => setEditPriceRacketRental(Number(e.target.value))}
+                        className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-xs font-bold focus:ring-1 focus:ring-lime-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block">Phí Thuê rổ bóng tập (đ/buổi) *</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={5000}
+                        value={editPriceBallRental}
+                        onChange={(e) => setEditPriceBallRental(Number(e.target.value))}
+                        className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-xs font-bold focus:ring-1 focus:ring-lime-500 outline-none"
+                      />
+                    </div>
                   </div>
                 </div>
 

@@ -88,6 +88,67 @@ export default function CustomerView({
   const [isSuccessBooked, setIsSuccessBooked] = useState(false);
   const [newBookingDetails, setNewBookingDetails] = useState<Booking | null>(null);
 
+  // Custom pricing and rental selection state fields
+  const [useLights, setUseLights] = useState<boolean>(false);
+  const [rentalType, setRentalType] = useState<'casual' | 'monthly'>('casual');
+  const [rentRackets, setRentRackets] = useState<boolean>(false);
+  const [rentBalls, setRentBalls] = useState<boolean>(false);
+
+  // Helper to extract slot start hour for pricing calculations
+  const getSlotStartHour = (slotStr: string): number => {
+    if (!slotStr) return 0;
+    const parts = slotStr.split(' - ');
+    if (parts.length > 0) {
+      const hourPart = parts[0].split(':');
+      return parseInt(hourPart[0], 10);
+    }
+    return 0;
+  };
+
+  // Dynamic booking price calculation helper based on requirements
+  const calculateBookingPrice = (
+    court: Court,
+    slotStr: string | null,
+    lights: boolean,
+    type: 'casual' | 'monthly',
+    rackets: boolean,
+    balls: boolean
+  ): number => {
+    if (!slotStr) return 0;
+
+    let basePrice = 0;
+    const priceNoLights = court.priceNoLights !== undefined ? court.priceNoLights : 60000;
+    const priceLightsCasual = court.priceLightsCasual !== undefined ? court.priceLightsCasual : 120000;
+    const priceLightsMonthlyDaytime = court.priceLightsMonthlyDaytime !== undefined ? court.priceLightsMonthlyDaytime : 80000;
+    const priceLightsMonthlyEvening = court.priceLightsMonthlyEvening !== undefined ? court.priceLightsMonthlyEvening : 100000;
+
+    if (!lights) {
+      basePrice = priceNoLights;
+    } else {
+      if (type === 'casual') {
+        basePrice = priceLightsCasual;
+      } else {
+        // "monthly"
+        const startHour = getSlotStartHour(slotStr);
+        if (startHour >= 17) {
+          basePrice = priceLightsMonthlyEvening;
+        } else {
+          basePrice = priceLightsMonthlyDaytime;
+        }
+      }
+    }
+
+    let extraFees = 0;
+    if (rackets) {
+      extraFees += court.priceRacketRental !== undefined ? court.priceRacketRental : 30000;
+    }
+    if (balls) {
+      extraFees += court.priceBallRental !== undefined ? court.priceBallRental : 30000;
+    }
+
+    return basePrice + extraFees;
+  };
+
   // Filter Court logic
   const filteredCourts = useMemo(() => {
     return courts
@@ -128,6 +189,12 @@ export default function CustomerView({
     setSelectedSlot(null);
     setIsSuccessBooked(false);
     setNewBookingDetails(null);
+    
+    // Reset pricing selections to defaults
+    setUseLights(false);
+    setRentalType('casual');
+    setRentRackets(false);
+    setRentBalls(false);
   };
 
   const handleCloseBooking = () => {
@@ -139,10 +206,15 @@ export default function CustomerView({
     e.preventDefault();
     if (!selectedCourt || !selectedSlot) return;
 
-    // Determine slot configuration
-    const matchingConfig = TIME_SLOTS.find(s => `${s.start} - ${s.end}` === selectedSlot);
-    const isEvening = matchingConfig?.isEvening || false;
-    const price = isEvening ? selectedCourt.priceEvening : selectedCourt.priceDaytime;
+    // Direct dynamic calculation matching our custom price requirements
+    const calculatedPrice = calculateBookingPrice(
+      selectedCourt,
+      selectedSlot,
+      useLights,
+      rentalType,
+      rentRackets,
+      rentBalls
+    );
 
     const newBooking: Booking = {
       id: 'booking-' + Date.now(),
@@ -152,11 +224,15 @@ export default function CustomerView({
       customerPhone: phoneNumber,
       date: selectedDate,
       timeSlot: selectedSlot,
-      totalPrice: price,
+      totalPrice: calculatedPrice,
       status: 'pending',
       createdAt: new Date().toISOString(),
       notes: notes.trim() || undefined,
       paymentMethod,
+      useLights,
+      rentalType,
+      rentRackets,
+      rentBalls
     };
 
     onAddBooking(newBooking);
@@ -462,13 +538,30 @@ export default function CustomerView({
                   </div>
 
                   <ul className="space-y-2 bg-slate-900 border border-slate-800/80 p-4 rounded-xl text-xs text-slate-300">
+                    <p className="font-bold text-lime-400 border-b border-white/10 pb-1 mb-2">📊 Bảng giá áp dụng:</p>
                     <li className="flex justify-between">
-                      <span className="text-slate-400 font-semibold">☀️ Giờ sáng - chiều:</span>
-                      <span className="font-bold text-lime-400">{selectedCourt.priceDaytime.toLocaleString('vi-VN')} VNĐ</span>
+                      <span className="text-slate-400 font-semibold">☀️ Không dùng đèn:</span>
+                      <span className="font-bold text-white">{(selectedCourt.priceNoLights !== undefined ? selectedCourt.priceNoLights : 60000).toLocaleString('vi-VN')}đ/h</span>
                     </li>
                     <li className="flex justify-between">
-                      <span className="text-slate-400 font-semibold">🌙 Giờ tối cao điểm:</span>
-                      <span className="font-bold text-lime-400">{selectedCourt.priceEvening.toLocaleString('vi-VN')} VNĐ</span>
+                      <span className="text-slate-400 font-semibold">💡 Đèn - Cố định (5h - 17h):</span>
+                      <span className="font-bold text-white">{(selectedCourt.priceLightsMonthlyDaytime !== undefined ? selectedCourt.priceLightsMonthlyDaytime : 80000).toLocaleString('vi-VN')}đ/h</span>
+                    </li>
+                    <li className="flex justify-between">
+                      <span className="text-slate-400 font-semibold">💡 Đèn - Cố định (17h - 22h):</span>
+                      <span className="font-bold text-white">{(selectedCourt.priceLightsMonthlyEvening !== undefined ? selectedCourt.priceLightsMonthlyEvening : 100000).toLocaleString('vi-VN')}đ/h</span>
+                    </li>
+                    <li className="flex justify-between border-b border-white/5 pb-1.5 mb-1.5">
+                      <span className="text-slate-400 font-semibold">👤 Đèn - Khách thuê lẻ:</span>
+                      <span className="font-bold text-white">{(selectedCourt.priceLightsCasual !== undefined ? selectedCourt.priceLightsCasual : 120000).toLocaleString('vi-VN')}đ/h</span>
+                    </li>
+                    <li className="flex justify-between">
+                      <span className="text-slate-400">🏸 Thuê thêm vợt:</span>
+                      <span className="font-bold text-lime-400">{(selectedCourt.priceRacketRental !== undefined ? selectedCourt.priceRacketRental : 30000).toLocaleString('vi-VN')}đ</span>
+                    </li>
+                    <li className="flex justify-between">
+                      <span className="text-slate-400">🎾 Rổ bóng tập:</span>
+                      <span className="font-bold text-lime-400">{(selectedCourt.priceBallRental !== undefined ? selectedCourt.priceBallRental : 30000).toLocaleString('vi-VN')}đ</span>
                     </li>
                   </ul>
                 </div>
@@ -610,6 +703,151 @@ export default function CustomerView({
                         </div>
                       </div>
 
+                      {/* NEW SECTION: Configuration options for lights, rental type, racket, and balls */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-4">
+                        <span className="text-xs font-bold text-slate-700 uppercase tracking-widest flex items-center space-x-1.5 border-b border-slate-200/50 pb-2">
+                          💡 Cấu hình thuê & Dịch vụ đi kèm
+                        </span>
+
+                        {/* Lights selection & Rental Type selection */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-slate-600 block">Sử dụng thắp đèn ban đêm?</label>
+                            <div className="grid grid-cols-2 gap-1.5 bg-white p-1 rounded-xl border border-slate-200/80">
+                              <button
+                                type="button"
+                                onClick={() => setUseLights(true)}
+                                className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                  useLights
+                                    ? 'bg-slate-900 text-white shadow-sm font-bold'
+                                    : 'text-slate-600 hover:text-slate-900 bg-transparent'
+                                }`}
+                              >
+                                Có dùng đèn
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setUseLights(false)}
+                                className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                  !useLights
+                                    ? 'bg-slate-900 text-white shadow-sm font-bold'
+                                    : 'text-slate-600 hover:text-slate-900 bg-transparent'
+                                }`}
+                              >
+                                Không dùng
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-slate-600 block">Loại hình / Chế độ thuê sân?</label>
+                            <div className="grid grid-cols-2 gap-1.5 bg-white p-1 rounded-xl border border-slate-200/80">
+                              <button
+                                type="button"
+                                onClick={() => setRentalType('casual')}
+                                className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                  rentalType === 'casual'
+                                    ? 'bg-slate-900 text-white shadow-sm font-bold'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                👤 Thuê lẻ vãng lai
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setRentalType('monthly')}
+                                className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                  rentalType === 'monthly'
+                                    ? 'bg-slate-900 text-white shadow-sm font-bold'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                👥 Thuê cố định (ngày cố định)
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Accompanied checkboxes service */}
+                        <div className="space-y-2 pt-1 border-t border-slate-200/30">
+                          <label className="text-xs font-semibold text-slate-600 block">Dịch vụ mượn/thuê thêm:</label>
+                          <div className="flex flex-col sm:flex-row sm:space-x-4 space-y-2 sm:space-y-0">
+                            
+                            {/* Racket rental */}
+                            <label className="flex items-center space-x-2 bg-white px-3 py-2 border border-slate-200/60 rounded-xl cursor-pointer hover:bg-slate-100/50 flex-1 transition-all select-none">
+                              <input
+                                type="checkbox"
+                                checked={rentRackets}
+                                onChange={(e) => setRentRackets(e.target.checked)}
+                                className="rounded border-slate-300 text-lime-500 accent-lime-500 h-4.5 w-4.5 cursor-pointer"
+                              />
+                              <div className="text-xs">
+                                <span className="font-bold text-slate-800">Thuê thêm vợt</span>
+                                <span className="text-slate-500 text-[10px] ml-1.5">({(selectedCourt.priceRacketRental !== undefined ? selectedCourt.priceRacketRental : 30000).toLocaleString('vi-VN')}đ)</span>
+                              </div>
+                            </label>
+
+                            {/* Training ball basket */}
+                            <label className="flex items-center space-x-2 bg-white px-3 py-2 border border-slate-200/60 rounded-xl cursor-pointer hover:bg-slate-100/50 flex-1 transition-all select-none">
+                              <input
+                                type="checkbox"
+                                checked={rentBalls}
+                                onChange={(e) => setRentBalls(e.target.checked)}
+                                className="rounded border-slate-300 text-lime-500 accent-lime-500 h-4.5 w-4.5 cursor-pointer"
+                              />
+                              <div className="text-xs">
+                                <span className="font-bold text-slate-800">Thuê giỏ bóng tập</span>
+                                <span className="text-slate-500 text-[10px] ml-1.5">({(selectedCourt.priceBallRental !== undefined ? selectedCourt.priceBallRental : 30000).toLocaleString('vi-VN')}đ)</span>
+                              </div>
+                            </label>
+
+                          </div>
+                        </div>
+
+                        {/* Price breakdown calculation preview */}
+                        {selectedSlot && (
+                          <div className="p-3 bg-lime-400/10 border border-lime-400/20 text-slate-800 rounded-xl text-xs space-y-1">
+                            <p className="font-bold text-slate-900 border-b border-lime-400/25 pb-1 flex items-center justify-between">
+                              <span>Ước lượng định giá theo giờ thuê:</span>
+                              <span className="text-lime-700">Chi tiết biểu giá</span>
+                            </p>
+                            <div className="space-y-0.5 pt-1 text-slate-600">
+                              <div className="flex justify-between">
+                                <span>Giá gốc giờ đặt {!useLights ? '(Không đèn)' : useLights && rentalType === 'casual' ? '(Đèn - Khách lẻ)' : '(Đèn - Cố định tháng)'}:</span>
+                                <span className="font-bold text-slate-800">
+                                  {(!useLights
+                                    ? (selectedCourt.priceNoLights !== undefined ? selectedCourt.priceNoLights : 60000)
+                                    : (rentalType === 'casual'
+                                      ? (selectedCourt.priceLightsCasual !== undefined ? selectedCourt.priceLightsCasual : 120000)
+                                      : (getSlotStartHour(selectedSlot) >= 17
+                                        ? (selectedCourt.priceLightsMonthlyEvening !== undefined ? selectedCourt.priceLightsMonthlyEvening : 100000)
+                                        : (selectedCourt.priceLightsMonthlyDaytime !== undefined ? selectedCourt.priceLightsMonthlyDaytime : 80000)
+                                      )
+                                    )
+                                  ).toLocaleString('vi-VN')} VNĐ / h
+                                </span>
+                              </div>
+                              {rentRackets && (
+                                <div className="flex justify-between">
+                                  <span>Dịch vụ thuê thêm vợt:</span>
+                                  <span className="font-semibold text-slate-700">+{(selectedCourt.priceRacketRental !== undefined ? selectedCourt.priceRacketRental : 30000).toLocaleString('vi-VN')} VNĐ</span>
+                                </div>
+                              )}
+                              {rentBalls && (
+                                <div className="flex justify-between">
+                                  <span>Dịch vụ thuê rổ bóng tập:</span>
+                                  <span className="font-semibold text-slate-700">+{(selectedCourt.priceBallRental !== undefined ? selectedCourt.priceBallRental : 30000).toLocaleString('vi-VN')} VNĐ</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between border-t border-slate-205/50 pt-1 mt-1 text-sm text-slate-900 font-extrabold">
+                                <span>Tổng cộng:</span>
+                                <span className="text-lime-600 text-lg font-black">{calculateBookingPrice(selectedCourt, selectedSlot, useLights, rentalType, rentRackets, rentBalls).toLocaleString('vi-VN')}đ</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       {/* 3. Personal detail form */}
                       <div className="space-y-3 pt-1">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center space-x-1">
@@ -710,11 +948,16 @@ export default function CustomerView({
                     <div className="border-t border-slate-100 pt-4 flex items-center justify-between">
                       <div>
                         {selectedSlot ? (
-                          <div className="text-xs text-slate-500">
-                            Khung giờ đã chọn: <span className="font-bold text-slate-900">{selectedSlot}</span>
+                          <div className="text-xs text-slate-500 space-y-1">
+                            <div>
+                              Khung giờ đã chọn: <span className="font-bold text-slate-900">{selectedSlot}</span>
+                            </div>
+                            <div className="text-slate-900 font-extrabold text-sm">
+                              Tổng tiền: <span className="text-lime-600 font-black text-base">{calculateBookingPrice(selectedCourt, selectedSlot, useLights, rentalType, rentRackets, rentBalls).toLocaleString('vi-VN')}đ</span>
+                            </div>
                           </div>
                         ) : (
-                          <div className="text-xs text-rose-500 font-medium">Vui lòng chọn khung giờ</div>
+                          <div className="text-xs text-rose-500 font-semibold">Vui lòng chọn khung giờ</div>
                         )}
                       </div>
                       
@@ -767,6 +1010,31 @@ export default function CustomerView({
                           <span>Khách hàng:</span>
                           <span className="font-bold text-slate-900">{newBookingDetails.customerName}</span>
                         </div>
+                        
+                        <div className="bg-slate-100 p-2.5 rounded-xl space-y-1 text-slate-500 text-[11px]">
+                          <div className="flex justify-between">
+                            <span>💡 Sử dụng đèn đêm:</span>
+                            <span className="font-bold text-slate-800">{newBookingDetails.useLights ? "Có dùng đèn" : "Không dùng"}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>👥 Chế độ thuê:</span>
+                            <span className="font-bold text-slate-800">
+                              {newBookingDetails.rentalType === "monthly" ? "Đội cố định tháng" : "Khách lẻ vãng lai"}
+                            </span>
+                          </div>
+                          {(newBookingDetails.rentRackets || newBookingDetails.rentBalls) && (
+                            <div className="border-t border-slate-200/55 pt-1 mt-1">
+                              <span>🛍️ Đồ thuê kèm: </span>
+                              <span className="font-semibold text-slate-800">
+                                {[
+                                  newBookingDetails.rentRackets ? "Thuê vợt" : null,
+                                  newBookingDetails.rentBalls ? "Rổ bóng tập" : null
+                                ].filter(Boolean).join(", ")}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
                         <div className="flex justify-between border-t border-slate-200/60 pt-2 text-sm">
                           <span className="font-extrabold text-slate-800">Tổng phí thanh toán:</span>
                           <span className="font-black text-lime-600">
