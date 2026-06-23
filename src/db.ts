@@ -1,148 +1,127 @@
-import { Firestore } from "@google-cloud/firestore";
 import fs from "fs";
 import path from "path";
 import { Court, Booking, BankConfig } from "./types";
 
-// Load configuration
-const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-let firebaseConfig: any = null;
+// Absolute paths to local database files in the /src directory
+const COURTS_FILE = path.join(process.cwd(), "src", "courts.json");
+const BOOKINGS_FILE = path.join(process.cwd(), "src", "bookings.json");
+const BANK_FILE = path.join(process.cwd(), "src", "bank-config.json");
 
-try {
-  if (fs.existsSync(configPath)) {
-    firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+// Helper to safely write JSON
+function writeJsonFile(filePath: string, data: any) {
+  try {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.error(`Error writing local database file ${filePath}:`, err);
   }
-} catch (err) {
-  console.error("Failed to read firebase-applet-config.json:", err);
 }
 
-// Fallbacks from environment variables for production environments like Render.com
-const projectId = firebaseConfig?.projectId || process.env.FIREBASE_PROJECT_ID || process.env.GCP_PROJECT_ID;
-const databaseId = firebaseConfig?.firestoreDatabaseId || process.env.FIREBASE_DATABASE_ID || process.env.GCP_DATABASE_ID;
-const privateKey = process.env.GCP_PRIVATE_KEY;
-const clientEmail = process.env.GCP_CLIENT_EMAIL;
-
-let db: Firestore | null = null;
-let useFirebase = false;
-
-if (projectId) {
+// Helper to safely read JSON
+function readJsonFile<T>(filePath: string): T | null {
   try {
-    const dbOptions: any = {
-      projectId: projectId
-    };
-    if (databaseId) {
-      dbOptions.databaseId = databaseId;
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, "utf-8");
+      return JSON.parse(data) as T;
     }
-    // If running on a cloud hosting like Render and using service account credential environment variables
-    if (privateKey && clientEmail) {
-      dbOptions.credentials = {
-        private_key: privateKey.replace(/\\n/g, '\n'),
-        client_email: clientEmail
-      };
-    }
-    db = new Firestore(dbOptions);
-    useFirebase = true;
-    console.log("Firebase Cloud Firestore initialized successfully! Project ID:", projectId, "Database ID:", databaseId || "(default)");
   } catch (err) {
-    console.error("Error initializing Firebase Server-Side SDK:", err);
+    console.error(`Error reading local database file ${filePath}:`, err);
   }
-} else {
-  console.warn("No Firebase Config found. Falling back to local data store.");
+  return null;
 }
 
 export async function fetchCourtsFromDb(defaultCourts: Court[]): Promise<Court[]> {
-  if (!useFirebase || !db) return defaultCourts;
   try {
-    const snapshot = await db.collection("courts").get();
-    if (snapshot.empty) {
-      // Seed default courts to Firestore
-      for (const court of defaultCourts) {
-        await db.collection("courts").doc(court.id).set(court);
-      }
-      return defaultCourts;
+    const list = readJsonFile<Court[]>(COURTS_FILE);
+    if (list && list.length > 0) {
+      return list.sort((a, b) => a.id.localeCompare(b.id));
     }
-    const courts: Court[] = [];
-    snapshot.forEach((docSnap) => {
-      courts.push(docSnap.data() as Court);
-    });
-    // Sort courts to maintain order or keep them stable
-    return courts.sort((a, b) => a.id.localeCompare(b.id));
+    // Seed and write default
+    writeJsonFile(COURTS_FILE, defaultCourts);
+    return defaultCourts;
   } catch (err) {
-    console.error("Failed to fetch courts from Firestore, using local defaults:", err);
+    console.error("Local DB fetchCourts failed, using default:", err);
     return defaultCourts;
   }
 }
 
 export async function saveCourtToDb(court: Court): Promise<void> {
-  if (!useFirebase || !db) return;
   try {
-    await db.collection("courts").doc(court.id).set(court);
+    const list = readJsonFile<Court[]>(COURTS_FILE) || [];
+    const index = list.findIndex(c => c.id === court.id);
+    if (index >= 0) {
+      list[index] = court;
+    } else {
+      list.push(court);
+    }
+    writeJsonFile(COURTS_FILE, list);
   } catch (err) {
-    console.error("Failed to save court to Firestore:", err);
+    console.error("Local DB saveCourt failed:", err);
   }
 }
 
 export async function deleteCourtFromDb(id: string): Promise<void> {
-  if (!useFirebase || !db) return;
   try {
-    await db.collection("courts").doc(id).delete();
+    let list = readJsonFile<Court[]>(COURTS_FILE) || [];
+    list = list.filter(c => c.id !== id);
+    writeJsonFile(COURTS_FILE, list);
   } catch (err) {
-    console.error("Failed to delete court from Firestore:", err);
+    console.error("Local DB deleteCourt failed:", err);
   }
 }
 
 export async function fetchBookingsFromDb(defaultBookings: Booking[]): Promise<Booking[]> {
-  if (!useFirebase || !db) return defaultBookings;
   try {
-    const snapshot = await db.collection("bookings").get();
-    if (snapshot.empty) {
-      // Seed default bookings to Firestore
-      for (const b of defaultBookings) {
-        await db.collection("bookings").doc(b.id).set(b);
-      }
-      return defaultBookings;
+    const list = readJsonFile<Booking[]>(BOOKINGS_FILE);
+    if (list && list.length > 0) {
+      return list.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     }
-    const bookings: Booking[] = [];
-    snapshot.forEach((docSnap) => {
-      bookings.push(docSnap.data() as Booking);
-    });
-    // Sort bookings by createdAt or id
-    return bookings.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    // Seed and write default
+    writeJsonFile(BOOKINGS_FILE, defaultBookings);
+    return defaultBookings;
   } catch (err) {
-    console.error("Failed to fetch bookings from Firestore, using local defaults:", err);
+    console.error("Local DB fetchBookings failed, using default:", err);
     return defaultBookings;
   }
 }
 
 export async function saveBookingToDb(booking: Booking): Promise<void> {
-  if (!useFirebase || !db) return;
   try {
-    await db.collection("bookings").doc(booking.id).set(booking);
+    const list = readJsonFile<Booking[]>(BOOKINGS_FILE) || [];
+    const index = list.findIndex(b => b.id === booking.id);
+    if (index >= 0) {
+      list[index] = booking;
+    } else {
+      list.push(booking);
+    }
+    writeJsonFile(BOOKINGS_FILE, list);
   } catch (err) {
-    console.error("Failed to save booking to Firestore:", err);
+    console.error("Local DB saveBooking failed:", err);
   }
 }
 
 export async function fetchBankConfigFromDb(defaultBank: BankConfig): Promise<BankConfig> {
-  if (!useFirebase || !db) return defaultBank;
   try {
-    const docSnap = await db.collection("settings").doc("bankConfig").get();
-    if (docSnap.exists) {
-      return docSnap.data() as BankConfig;
-    } else {
-      await db.collection("settings").doc("bankConfig").set(defaultBank);
-      return defaultBank;
+    const config = readJsonFile<BankConfig>(BANK_FILE);
+    if (config) {
+      return config;
     }
+    // Seed default
+    writeJsonFile(BANK_FILE, defaultBank);
+    return defaultBank;
   } catch (err) {
-    console.error("Failed to fetch bankConfig from Firestore, using local defaults:", err);
+    console.error("Local DB fetchBankConfig failed, using default:", err);
     return defaultBank;
   }
 }
 
 export async function saveBankConfigToDb(bankConfig: BankConfig): Promise<void> {
-  if (!useFirebase || !db) return;
   try {
-    await db.collection("settings").doc("bankConfig").set(bankConfig);
+    writeJsonFile(BANK_FILE, bankConfig);
   } catch (err) {
-    console.error("Failed to save bankConfig to Firestore:", err);
+    console.error("Local DB saveBankConfig failed:", err);
   }
 }
