@@ -15,25 +15,38 @@ try {
   console.error("Failed to read firebase-applet-config.json:", err);
 }
 
+// Fallbacks from environment variables for production environments like Render.com
+const projectId = firebaseConfig?.projectId || process.env.FIREBASE_PROJECT_ID || process.env.GCP_PROJECT_ID;
+const databaseId = firebaseConfig?.firestoreDatabaseId || process.env.FIREBASE_DATABASE_ID || process.env.GCP_DATABASE_ID;
+const privateKey = process.env.GCP_PRIVATE_KEY;
+const clientEmail = process.env.GCP_CLIENT_EMAIL;
+
 let db: Firestore | null = null;
 let useFirebase = false;
 
-if (firebaseConfig && firebaseConfig.projectId) {
+if (projectId) {
   try {
     const dbOptions: any = {
-      projectId: firebaseConfig.projectId
+      projectId: projectId
     };
-    if (firebaseConfig.firestoreDatabaseId) {
-      dbOptions.databaseId = firebaseConfig.firestoreDatabaseId;
+    if (databaseId) {
+      dbOptions.databaseId = databaseId;
+    }
+    // If running on a cloud hosting like Render and using service account credential environment variables
+    if (privateKey && clientEmail) {
+      dbOptions.credentials = {
+        private_key: privateKey.replace(/\\n/g, '\n'),
+        client_email: clientEmail
+      };
     }
     db = new Firestore(dbOptions);
     useFirebase = true;
-    console.log("Firebase Cloud Firestore Server-Side initialized successfully! Database ID:", firebaseConfig.firestoreDatabaseId || "(default)");
+    console.log("Firebase Cloud Firestore initialized successfully! Project ID:", projectId, "Database ID:", databaseId || "(default)");
   } catch (err) {
     console.error("Error initializing Firebase Server-Side SDK:", err);
   }
 } else {
-  console.warn("No firebase-applet-config.json found or invalid. Falling back to local data store.");
+  console.warn("No Firebase Config found. Falling back to local data store.");
 }
 
 export async function fetchCourtsFromDb(defaultCourts: Court[]): Promise<Court[]> {
