@@ -42,6 +42,8 @@ export interface Booking {
   rentalType?: 'casual' | 'monthly';  // "Thuê lẻ" (casual) / "Thuê cố định theo tháng" (monthly)
   rentRackets?: boolean;              // "Có" / "Không" thuê vợt
   rentBalls?: boolean;                // "Có" / "Không" thuê rổ bóng tập
+  bookingGroupId?: string;            // ID nhóm đặt sân cố định (để kết nối các buổi của tháng)
+  monthsCount?: number;               // Số tháng đã chọn thuê
 }
 
 export interface TimeSlotConfig {

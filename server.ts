@@ -243,16 +243,32 @@ async function startServer() {
     res.json(state.bookings);
   });
 
-  // API ROUTE: Create a booking
+  // API ROUTE: Create a booking (or multiple bookings)
   app.post("/api/bookings", (req, res) => {
-    const newBooking: Booking = req.body;
-    if (!newBooking.id) {
-       newBooking.id = "b-" + Date.now();
+    const body = req.body;
+    if (Array.isArray(body)) {
+      const addedBookings: Booking[] = [];
+      for (const booking of body) {
+        const b = { ...booking };
+        if (!b.id) {
+          b.id = "b-" + Math.random().toString(36).substr(2, 9) + "-" + Date.now();
+        }
+        state.bookings.push(b);
+        addedBookings.push(b);
+        saveBookingToDb(b).catch(console.error);
+      }
+      saveDataToFile();
+      res.status(201).json(addedBookings);
+    } else {
+      const newBooking: Booking = body;
+      if (!newBooking.id) {
+         newBooking.id = "b-" + Date.now();
+      }
+      state.bookings.push(newBooking);
+      saveDataToFile();
+      saveBookingToDb(newBooking).catch(console.error);
+      res.status(201).json(newBooking);
     }
-    state.bookings.push(newBooking);
-    saveDataToFile();
-    saveBookingToDb(newBooking).catch(console.error);
-    res.status(201).json(newBooking);
   });
 
   // API ROUTE: Update booking status

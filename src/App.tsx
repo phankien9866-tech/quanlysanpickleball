@@ -132,10 +132,12 @@ export default function App() {
   };
 
   // 3. Customer Operations with optimistic local state + instant server POST
-  const handleAddBooking = async (newBooking: Booking) => {
+  const handleAddBooking = async (newBooking: Booking | Booking[]) => {
+    const bookingsToAdd = Array.isArray(newBooking) ? newBooking : [newBooking];
+
     // Optimistic local update
-    setBookings(prev => [newBooking, ...prev]);
-    setMyBookedIds(prev => [newBooking.id, ...prev]);
+    setBookings(prev => [...bookingsToAdd, ...prev]);
+    setMyBookedIds(prev => [...bookingsToAdd.map(b => b.id), ...prev]);
 
     try {
       const response = await fetch('/api/bookings', {
