@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Court, Booking, TimeSlotConfig, BankConfig } from '../types';
 import { TIME_SLOTS } from '../data';
 import { 
@@ -78,7 +78,21 @@ export default function CustomerView({
 
   const bookingDates = useMemo(() => getDates(), []);
   const [selectedDate, setSelectedDate] = useState(bookingDates[0].dateString);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
+
+  const toggleSlot = (slotString: string) => {
+    setSelectedSlots(prev => {
+      if (prev.includes(slotString)) {
+        return prev.filter(s => s !== slotString);
+      } else {
+        return [...prev, slotString].sort((a, b) => {
+          const hourA = Number(a.split(':')[0]);
+          const hourB = Number(b.split(':')[0]);
+          return hourA - hourB;
+        });
+      }
+    });
+  };
 
   // Form State
   const [fullName, setFullName] = useState('');
@@ -94,9 +108,44 @@ export default function CustomerView({
   const [monthsCount, setMonthsCount] = useState<number>(1);
   const [rentRackets, setRentRackets] = useState<boolean>(false);
   const [rentBalls, setRentBalls] = useState<boolean>(false);
+  const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([]);
+  const [monthlyStartDate, setMonthlyStartDate] = useState<string>('');
 
-  // Helper to generate list of dates based on start date and monthsCount
-  const getRecurringDates = (startDateStr: string, months: number): string[] => {
+  // Keep selectedWeekdays and monthlyStartDate updated when selectedDate changes
+  useEffect(() => {
+    if (selectedDate) {
+      setMonthlyStartDate(selectedDate);
+      const day = new Date(selectedDate).getDay();
+      setSelectedWeekdays([day]);
+    }
+  }, [selectedDate]);
+
+  const handleMonthlyStartDateChange = (newDate: string) => {
+    setMonthlyStartDate(newDate);
+    if (newDate) {
+      const day = new Date(newDate).getDay();
+      setSelectedWeekdays([day]);
+    }
+  };
+
+  const toggleWeekday = (day: number) => {
+    setSelectedWeekdays(prev => {
+      if (prev.includes(day)) {
+        if (prev.length === 1) return prev; // Keep at least one selected
+        return prev.filter(d => d !== day);
+      } else {
+        return [...prev, day].sort((a, b) => {
+          // Sort such that Mon (1) to Sat (6) are in order and Sun (0) is last
+          const valA = a === 0 ? 7 : a;
+          const valB = b === 0 ? 7 : b;
+          return valA - valB;
+        });
+      }
+    });
+  };
+
+  // Helper to generate list of dates based on start date, monthsCount, and selected weekdays
+  const getRecurringDates = (startDateStr: string, months: number, weekdays: number[] = []): string[] => {
     if (!startDateStr) return [];
     const dates: string[] = [];
     const start = new Date(startDateStr);
@@ -105,15 +154,19 @@ export default function CustomerView({
     const end = new Date(start);
     end.setMonth(start.getMonth() + months);
     
+    const targetWeekdays = weekdays.length > 0 ? weekdays : [start.getDay()];
+    
     const current = new Date(start);
     while (current <= end) {
-      const yyyy = current.getFullYear();
-      const mm = String(current.getMonth() + 1).padStart(2, '0');
-      const dd = String(current.getDate()).padStart(2, '0');
-      dates.push(`${yyyy}-${mm}-${dd}`);
+      if (targetWeekdays.includes(current.getDay())) {
+        const yyyy = current.getFullYear();
+        const mm = String(current.getMonth() + 1).padStart(2, '0');
+        const dd = String(current.getDate()).padStart(2, '0');
+        dates.push(`${yyyy}-${mm}-${dd}`);
+      }
       
-      // Add 7 days
-      current.setDate(current.getDate() + 7);
+      // Increment by 1 day
+      current.setDate(current.getDate() + 1);
     }
     return dates;
   };
@@ -125,6 +178,21 @@ export default function CustomerView({
     const dayIndex = date.getDay();
     if (dayIndex === 0) return 'Chủ Nhật';
     return `Thứ ${dayIndex + 1}`;
+  };
+
+  // Helper to get multiple day names in Vietnamese
+  const getVietnameseDaysOfWeek = (weekdaysList: number[]): string => {
+    if (!weekdaysList || weekdaysList.length === 0) return '';
+    const sorted = [...weekdaysList].sort((a, b) => {
+      const valA = a === 0 ? 7 : a;
+      const valB = b === 0 ? 7 : b;
+      return valA - valB;
+    });
+    const labels = sorted.map(w => {
+      if (w === 0) return 'Chủ Nhật';
+      return `Thứ ${w + 1}`;
+    });
+    return labels.join(', ');
   };
 
   // Helper to extract slot start hour for pricing calculations
@@ -219,7 +287,7 @@ export default function CustomerView({
 
   const handleOpenBooking = (court: Court) => {
     setSelectedCourt(court);
-    setSelectedSlot(null);
+    setSelectedSlots([]);
     setIsSuccessBooked(false);
     setNewBookingDetails(null);
     
@@ -233,36 +301,86 @@ export default function CustomerView({
 
   const handleCloseBooking = () => {
     setSelectedCourt(null);
-    setSelectedSlot(null);
+    setSelectedSlots([]);
   };
 
   const handleSubmitBooking = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCourt || !selectedSlot) return;
-
-    // Single session price
-    const sessionPrice = calculateBookingPrice(
-      selectedCourt,
-      selectedSlot,
-      useLights,
-      rentalType,
-      rentRackets,
-      rentBalls
-    );
+    if (!selectedCourt || selectedSlots.length === 0) return;
 
     if (rentalType === 'monthly') {
-      const recurringDates = getRecurringDates(selectedDate, monthsCount);
+      const recurringDates = getRecurringDates(monthlyStartDate || selectedDate, monthsCount, selectedWeekdays);
       const groupId = 'group-' + Date.now();
-      const generatedBookings: Booking[] = recurringDates.map((dateStr, idx) => {
-        return {
-          id: `booking-${Date.now()}-${idx}`,
+      const generatedBookings: Booking[] = [];
+      let totalMultipliedPrice = 0;
+
+      selectedSlots.forEach((slot, sIdx) => {
+        const slotPrice = calculateBookingPrice(
+          selectedCourt,
+          slot,
+          useLights,
+          rentalType,
+          rentRackets,
+          rentBalls
+        );
+        
+        recurringDates.forEach((dateStr, dIdx) => {
+          generatedBookings.push({
+            id: `booking-${Date.now()}-${sIdx}-${dIdx}`,
+            courtId: selectedCourt.id,
+            courtName: selectedCourt.name,
+            customerName: fullName,
+            customerPhone: phoneNumber,
+            date: dateStr,
+            timeSlot: slot,
+            totalPrice: slotPrice,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            notes: notes.trim() || undefined,
+            paymentMethod,
+            useLights,
+            rentalType,
+            rentRackets,
+            rentBalls,
+            bookingGroupId: groupId,
+            monthsCount: monthsCount
+          });
+          totalMultipliedPrice += slotPrice;
+        });
+      });
+
+      onAddBooking(generatedBookings);
+      const displaySummary: Booking = {
+        ...generatedBookings[0],
+        id: groupId,
+        timeSlot: selectedSlots.join(', '),
+        totalPrice: totalMultipliedPrice,
+        notes: `Hợp đồng thuê cố định ${monthsCount} tháng, từ ngày ${monthlyStartDate.split('-').reverse().join('/')}, gồm ${generatedBookings.length} buổi đặt vào các ngày (${getVietnameseDaysOfWeek(selectedWeekdays)}).`
+      };
+      setNewBookingDetails(displaySummary);
+      setIsSuccessBooked(true);
+    } else {
+      const generatedBookings: Booking[] = [];
+      let totalMultipliedPrice = 0;
+
+      selectedSlots.forEach((slot, sIdx) => {
+        const slotPrice = calculateBookingPrice(
+          selectedCourt,
+          slot,
+          useLights,
+          rentalType,
+          rentRackets,
+          rentBalls
+        );
+        generatedBookings.push({
+          id: `booking-${Date.now()}-${sIdx}`,
           courtId: selectedCourt.id,
           courtName: selectedCourt.name,
           customerName: fullName,
           customerPhone: phoneNumber,
-          date: dateStr,
-          timeSlot: selectedSlot,
-          totalPrice: sessionPrice, // each session has its individual price
+          date: selectedDate,
+          timeSlot: slot,
+          totalPrice: slotPrice,
           status: 'pending',
           createdAt: new Date().toISOString(),
           notes: notes.trim() || undefined,
@@ -270,46 +388,18 @@ export default function CustomerView({
           useLights,
           rentalType,
           rentRackets,
-          rentBalls,
-          bookingGroupId: groupId,
-          monthsCount: monthsCount
-        };
+          rentBalls
+        });
+        totalMultipliedPrice += slotPrice;
       });
 
       onAddBooking(generatedBookings);
-      // For display on the Success dialog, we can pass a dummy/summary Booking object
-      // with cumulative totalPrice so the user sees the multiplied value!
-      const totalMultipliedPrice = sessionPrice * recurringDates.length;
       const displaySummary: Booking = {
         ...generatedBookings[0],
-        id: groupId,
-        totalPrice: totalMultipliedPrice,
-        notes: `Hợp đồng thuê cố định ${monthsCount} tháng, gồm ${recurringDates.length} buổi đặt.`
+        timeSlot: selectedSlots.join(', '),
+        totalPrice: totalMultipliedPrice
       };
       setNewBookingDetails(displaySummary);
-      setIsSuccessBooked(true);
-    } else {
-      const newBooking: Booking = {
-        id: 'booking-' + Date.now(),
-        courtId: selectedCourt.id,
-        courtName: selectedCourt.name,
-        customerName: fullName,
-        customerPhone: phoneNumber,
-        date: selectedDate,
-        timeSlot: selectedSlot,
-        totalPrice: sessionPrice,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        notes: notes.trim() || undefined,
-        paymentMethod,
-        useLights,
-        rentalType,
-        rentRackets,
-        rentBalls
-      };
-
-      onAddBooking(newBooking);
-      setNewBookingDetails(newBooking);
       setIsSuccessBooked(true);
     }
 
@@ -680,7 +770,7 @@ export default function CustomerView({
                               type="button"
                               onClick={() => {
                                 setSelectedDate(d.dateString);
-                                setSelectedSlot(null);
+                                setSelectedSlots([]);
                               }}
                               className={`flex-shrink-0 flex flex-col items-center justify-center p-2.5 w-22 rounded-xl border transition-all ${
                                 selectedDate === d.dateString
@@ -700,7 +790,7 @@ export default function CustomerView({
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center justify-between">
                           <span className="flex items-center space-x-1">
                             <Clock className="w-3.5 h-3.5" />
-                            <span>2. Chọn khung giờ trống (1 giờ / slot)</span>
+                            <span>2. Chọn các khung giờ trống (1 giờ / slot)</span>
                           </span>
                           <span className="text-[11px] text-slate-400 font-semibold italic text-right">
                             Màu xám: Đã có người đặt
@@ -720,14 +810,14 @@ export default function CustomerView({
                               {TIME_SLOTS.filter(s => !s.isEvening).map((slot) => {
                                 const slotString = `${slot.start} - ${slot.end}`;
                                 const isBooked = unavailableSlots.includes(slotString);
-                                const isSelected = selectedSlot === slotString;
+                                const isSelected = selectedSlots.includes(slotString);
                                 return (
                                   <button
                                     key={slotString}
                                     type="button"
                                     disabled={isBooked}
-                                    onClick={() => setSelectedSlot(slotString)}
-                                    className={`py-2 px-1 text-[11px] sm:text-xs font-bold rounded-lg border transition-all flex flex-col items-center justify-center ${
+                                    onClick={() => toggleSlot(slotString)}
+                                    className={`py-2.5 px-1 text-[11px] sm:text-xs font-bold rounded-lg border transition-all flex items-center justify-center ${
                                       isBooked 
                                         ? 'bg-slate-200 text-slate-400 border-slate-200 line-through cursor-not-allowed' 
                                         : isSelected
@@ -736,7 +826,6 @@ export default function CustomerView({
                                     }`}
                                   >
                                     <span>{slotString}</span>
-                                    <span className="text-[9px] opacity-75 font-medium">{selectedCourt.priceDaytime.toLocaleString('vi-VN')}đ</span>
                                   </button>
                                 );
                               })}
@@ -752,14 +841,14 @@ export default function CustomerView({
                               {TIME_SLOTS.filter(s => s.isEvening).map((slot) => {
                                 const slotString = `${slot.start} - ${slot.end}`;
                                 const isBooked = unavailableSlots.includes(slotString);
-                                const isSelected = selectedSlot === slotString;
+                                const isSelected = selectedSlots.includes(slotString);
                                 return (
                                   <button
                                     key={slotString}
                                     type="button"
                                     disabled={isBooked}
-                                    onClick={() => setSelectedSlot(slotString)}
-                                    className={`py-2 px-1 text-[11px] sm:text-xs font-bold rounded-lg border transition-all flex flex-col items-center justify-center ${
+                                    onClick={() => toggleSlot(slotString)}
+                                    className={`py-2.5 px-1 text-[11px] sm:text-xs font-bold rounded-lg border transition-all flex items-center justify-center ${
                                       isBooked 
                                         ? 'bg-slate-200 text-slate-400 border-slate-200 line-through cursor-not-allowed' 
                                         : isSelected
@@ -768,7 +857,6 @@ export default function CustomerView({
                                     }`}
                                   >
                                     <span>{slotString}</span>
-                                    <span className="text-[9px] opacity-75 font-medium">{selectedCourt.priceEvening.toLocaleString('vi-VN')}đ</span>
                                   </button>
                                 );
                               })}
@@ -844,7 +932,7 @@ export default function CustomerView({
 
                         {/* Dropdown choosing monthsCount when rentalType === 'monthly' */}
                         {rentalType === 'monthly' && (
-                          <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 space-y-2 mt-2">
+                          <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 space-y-3 mt-2">
                             <div className="flex items-center justify-between">
                               <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                                 📅 Số tháng muốn thuê cố định:
@@ -861,14 +949,61 @@ export default function CustomerView({
                                 ))}
                               </select>
                             </div>
+
+                            {/* Start date field */}
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                🚀 Ngày bắt đầu áp dụng:
+                              </label>
+                              <input
+                                type="date"
+                                value={monthlyStartDate}
+                                onChange={(e) => handleMonthlyStartDateChange(e.target.value)}
+                                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-lime-500 cursor-pointer text-right"
+                              />
+                            </div>
+
+                            {/* Choose multiple weekdays */}
+                            <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                              <label className="text-xs font-bold text-slate-700 block">
+                                🗓️ Chọn các thứ muốn đặt trong tuần:
+                              </label>
+                              <div className="grid grid-cols-4 sm:grid-cols-7 gap-1">
+                                {[
+                                  { value: 1, label: 'Thứ 2' },
+                                  { value: 2, label: 'Thứ 3' },
+                                  { value: 3, label: 'Thứ 4' },
+                                  { value: 4, label: 'Thứ 5' },
+                                  { value: 5, label: 'Thứ 6' },
+                                  { value: 6, label: 'Thứ 7' },
+                                  { value: 0, label: 'CN' }
+                                ].map((day) => {
+                                  const isSelected = selectedWeekdays.includes(day.value);
+                                  return (
+                                    <button
+                                      key={day.value}
+                                      type="button"
+                                      onClick={() => toggleWeekday(day.value)}
+                                      className={`py-1.5 text-[10px] sm:text-xs font-bold rounded-lg border transition-all text-center cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-lime-500 border-lime-500 text-slate-900 shadow-sm font-black'
+                                          : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                                      }`}
+                                    >
+                                      {day.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
                             
-                            {selectedDate && (
+                            {monthlyStartDate && (
                               <div className="bg-slate-50 p-2 rounded-lg text-[11px] text-slate-600 space-y-1">
                                 <span className="font-bold text-slate-700 block">
-                                  Lịch dự kiến ({getRecurringDates(selectedDate, monthsCount).length} buổi vào các ngày {getVietnameseDayOfWeek(selectedDate)}):
+                                  Lịch dự kiến ({getRecurringDates(monthlyStartDate, monthsCount, selectedWeekdays).length} buổi vào các ngày {getVietnameseDaysOfWeek(selectedWeekdays)}):
                                 </span>
-                                <div className="flex flex-wrap gap-1 mt-1 max-h-20 overflow-y-auto">
-                                  {getRecurringDates(selectedDate, monthsCount).map((d) => {
+                                <div className="flex flex-wrap gap-1 mt-1 max-h-24 overflow-y-auto">
+                                  {getRecurringDates(monthlyStartDate, monthsCount, selectedWeekdays).map((d) => {
                                     const parts = d.split('-');
                                     return (
                                       <span key={d} className="bg-white px-2 py-0.5 rounded border border-slate-200/80 font-bold text-slate-700">
@@ -919,64 +1054,49 @@ export default function CustomerView({
                         </div>
 
                         {/* Price breakdown calculation preview */}
-                        {selectedSlot && (() => {
-                          const singlePrice = calculateBookingPrice(selectedCourt, selectedSlot, useLights, rentalType, rentRackets, rentBalls);
-                          const totalSessions = rentalType === 'monthly' ? getRecurringDates(selectedDate, monthsCount).length : 1;
-                          const totalPrice = singlePrice * totalSessions;
+                        {selectedSlots.length > 0 && (() => {
+                          const totalSessions = rentalType === 'monthly' ? getRecurringDates(monthlyStartDate || selectedDate, monthsCount, selectedWeekdays).length : 1;
+                          
+                          const slotDetails = selectedSlots.map(slot => {
+                            const price = calculateBookingPrice(selectedCourt, slot, useLights, rentalType, rentRackets, rentBalls);
+                            return { slot, price };
+                          });
+
+                          const singleSessionTotal = slotDetails.reduce((sum, item) => sum + item.price, 0);
+                          const totalPrice = singleSessionTotal * totalSessions;
 
                           return (
                             <div className="p-3 bg-lime-400/10 border border-lime-400/20 text-slate-800 rounded-xl text-xs space-y-1">
                               <p className="font-bold text-slate-900 border-b border-lime-400/25 pb-1 flex items-center justify-between">
-                                <span>Ước lượng định giá theo giờ thuê:</span>
+                                <span>Ước lượng định giá theo giờ thuê ({selectedSlots.length} khung giờ):</span>
                                 <span className="text-lime-700">Chi tiết biểu giá</span>
                               </p>
-                              <div className="space-y-0.5 pt-1 text-slate-600">
-                                <div className="flex justify-between">
-                                  <span>Giá gốc giờ đặt {!useLights ? '(Không đèn)' : useLights && rentalType === 'casual' ? '(Đèn - Khách lẻ)' : '(Đèn - Cố định tháng)'}:</span>
-                                  <span className="font-bold text-slate-800">
-                                    {(!useLights
-                                      ? (selectedCourt.priceNoLights !== undefined ? selectedCourt.priceNoLights : 60000)
-                                      : (rentalType === 'casual'
-                                        ? (selectedCourt.priceLightsCasual !== undefined ? selectedCourt.priceLightsCasual : 120000)
-                                        : (getSlotStartHour(selectedSlot) >= 17
-                                          ? (selectedCourt.priceLightsMonthlyEvening !== undefined ? selectedCourt.priceLightsMonthlyEvening : 100000)
-                                          : (selectedCourt.priceLightsMonthlyDaytime !== undefined ? selectedCourt.priceLightsMonthlyDaytime : 80000)
-                                        )
-                                      )
-                                    ).toLocaleString('vi-VN')} VNĐ / h
-                                  </span>
-                                </div>
-                                {rentRackets && (
-                                  <div className="flex justify-between">
-                                    <span>Dịch vụ thuê thêm vợt:</span>
-                                    <span className="font-semibold text-slate-700">+{(selectedCourt.priceRacketRental !== undefined ? selectedCourt.priceRacketRental : 30000).toLocaleString('vi-VN')} VNĐ</span>
+                              <div className="space-y-1 pt-1 text-slate-600">
+                                {slotDetails.map(item => (
+                                  <div key={item.slot} className="flex justify-between items-center text-[11px]">
+                                    <span>🕒 Khung giờ {item.slot}:</span>
+                                    <span className="font-bold text-slate-800">{item.price.toLocaleString('vi-VN')}đ</span>
                                   </div>
-                                )}
-                                {rentBalls && (
-                                  <div className="flex justify-between">
-                                    <span>Dịch vụ thuê rổ bóng tập:</span>
-                                    <span className="font-semibold text-slate-700">+{(selectedCourt.priceBallRental !== undefined ? selectedCourt.priceBallRental : 30000).toLocaleString('vi-VN')} VNĐ</span>
-                                  </div>
-                                )}
+                                ))}
 
                                 {rentalType === 'monthly' ? (
                                   <>
                                     <div className="flex justify-between border-t border-slate-200/50 pt-1 mt-1 font-semibold text-slate-700">
-                                      <span>Giá mỗi buổi thuê:</span>
-                                      <span className="font-bold text-slate-800">{singlePrice.toLocaleString('vi-VN')}đ</span>
+                                      <span>Tổng cộng mỗi buổi (các khung giờ):</span>
+                                      <span className="font-bold text-slate-800">{singleSessionTotal.toLocaleString('vi-VN')}đ</span>
                                     </div>
                                     <div className="flex justify-between text-slate-700">
                                       <span>Tổng số buổi ({monthsCount} tháng):</span>
                                       <span className="font-bold text-slate-800">{totalSessions} buổi</span>
                                     </div>
-                                    <div className="flex justify-between border-t border-slate-205/50 pt-1 mt-1 text-sm text-slate-900 font-extrabold">
+                                    <div className="flex justify-between border-t border-slate-200/50 pt-1 mt-1 text-sm text-slate-900 font-extrabold">
                                       <span>Tổng cộng hợp đồng:</span>
                                       <span className="text-lime-600 text-lg font-black">{totalPrice.toLocaleString('vi-VN')}đ</span>
                                     </div>
                                   </>
                                 ) : (
-                                  <div className="flex justify-between border-t border-slate-205/50 pt-1 mt-1 text-sm text-slate-900 font-extrabold">
-                                    <span>Tổng cộng:</span>
+                                  <div className="flex justify-between border-t border-slate-200/50 pt-1 mt-1 text-sm text-slate-900 font-extrabold">
+                                    <span>Tổng cộng đặt sân:</span>
                                     <span className="text-lime-600 text-lg font-black">{totalPrice.toLocaleString('vi-VN')}đ</span>
                                   </div>
                                 )}
@@ -1085,19 +1205,20 @@ export default function CustomerView({
                     {/* Footer price and check out button */}
                     <div className="border-t border-slate-100 pt-4 flex items-center justify-between">
                       <div>
-                        {selectedSlot ? (
+                        {selectedSlots.length > 0 ? (
                           <div className="text-xs text-slate-500 space-y-1">
                             <div>
-                              Khung giờ đã chọn: <span className="font-bold text-slate-900">{selectedSlot}</span>
+                              Khung giờ đã chọn ({selectedSlots.length}): <span className="font-bold text-slate-900">{selectedSlots.join(', ')}</span>
                             </div>
                             <div className="text-slate-900 font-extrabold text-sm">
                               {rentalType === 'monthly' ? (
                                 <>
-                                  Tổng tiền ({getRecurringDates(selectedDate, monthsCount).length} buổi):{' '}
+                                  Tổng tiền ({getRecurringDates(monthlyStartDate || selectedDate, monthsCount, selectedWeekdays).length} buổi x {selectedSlots.length} khung giờ):{' '}
                                   <span className="text-lime-600 font-black text-base">
                                     {(
-                                      calculateBookingPrice(selectedCourt, selectedSlot, useLights, rentalType, rentRackets, rentBalls) *
-                                      getRecurringDates(selectedDate, monthsCount).length
+                                      selectedSlots.reduce((sum, slot) => {
+                                        return sum + calculateBookingPrice(selectedCourt, slot, useLights, rentalType, rentRackets, rentBalls);
+                                      }, 0) * getRecurringDates(monthlyStartDate || selectedDate, monthsCount, selectedWeekdays).length
                                     ).toLocaleString('vi-VN')}đ
                                   </span>
                                 </>
@@ -1105,7 +1226,9 @@ export default function CustomerView({
                                 <>
                                   Tổng tiền:{' '}
                                   <span className="text-lime-600 font-black text-base">
-                                    {calculateBookingPrice(selectedCourt, selectedSlot, useLights, rentalType, rentRackets, rentBalls).toLocaleString('vi-VN')}đ
+                                    {selectedSlots.reduce((sum, slot) => {
+                                      return sum + calculateBookingPrice(selectedCourt, slot, useLights, rentalType, rentRackets, rentBalls);
+                                    }, 0).toLocaleString('vi-VN')}đ
                                   </span>
                                 </>
                               )}
@@ -1118,9 +1241,9 @@ export default function CustomerView({
                       
                       <button
                         type="submit"
-                        disabled={!selectedSlot || !fullName || !phoneNumber}
+                        disabled={selectedSlots.length === 0 || !fullName || !phoneNumber}
                         className={`py-3 px-6 rounded-xl font-bold text-sm tracking-tight transition-all text-center flex items-center space-x-2.5 ${
-                          selectedSlot && fullName && phoneNumber
+                          selectedSlots.length > 0 && fullName && phoneNumber
                             ? 'bg-slate-900 text-white hover:bg-lime-400 hover:text-slate-900 cursor-pointer shadow-lg'
                             : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                         }`}
