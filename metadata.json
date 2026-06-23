@@ -1,0 +1,6 @@
+{
+  "name": "Quản Lý Đặt Sân Pickleball",
+  "description": "Ứng dụng hiện đại quản lý và đặt sân pickleball trực quan, dễ sử dụng, hỗ trợ cả người chơi đặt sân và chủ sân quản lý.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
