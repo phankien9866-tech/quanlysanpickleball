@@ -26,7 +26,9 @@ import {
   Award,
   CreditCard,
   Upload,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Lock,
+  Key
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -93,6 +95,12 @@ export default function AdminView({
   const [isDirty, setIsDirty] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  // Password modify state variables
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [pwdSaveStatus, setPwdSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [pwdMsg, setPwdMsg] = useState('');
 
   // Compute if the local form state matches the current props from the parent (server state)
   const isFormMatchingProps =
@@ -174,6 +182,62 @@ export default function AdminView({
     } catch (err) {
       setSaveStatus('error');
       setTimeout(() => setSaveStatus('idle'), 3000);
+    }
+  };
+
+  const handleSavePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPwd.trim() !== confirmPwd.trim()) {
+      setPwdMsg('Mật khẩu nhập lại không khớp!');
+      setPwdSaveStatus('error');
+      setTimeout(() => {
+        setPwdSaveStatus('idle');
+        setPwdMsg('');
+      }, 3000);
+      return;
+    }
+    if (newPwd.trim().length === 0) {
+      setPwdMsg('Mật khẩu không được bỏ trống!');
+      setPwdSaveStatus('error');
+      setTimeout(() => {
+        setPwdSaveStatus('idle');
+        setPwdMsg('');
+      }, 3000);
+      return;
+    }
+
+    setPwdSaveStatus('saving');
+    try {
+      const response = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPwd.trim() }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setPwdSaveStatus('saved');
+        setPwdMsg('Đã cập nhật mật khẩu mới của chủ sân thành công!');
+        setNewPwd('');
+        setConfirmPwd('');
+        setTimeout(() => {
+          setPwdSaveStatus('idle');
+          setPwdMsg('');
+        }, 3000);
+      } else {
+        setPwdSaveStatus('error');
+        setPwdMsg(data.message || 'Có lỗi xảy ra khi lưu mật khẩu!');
+        setTimeout(() => {
+          setPwdSaveStatus('idle');
+          setPwdMsg('');
+        }, 3000);
+      }
+    } catch (err) {
+      setPwdSaveStatus('error');
+      setPwdMsg('Lỗi kết nối máy chủ!');
+      setTimeout(() => {
+        setPwdSaveStatus('idle');
+        setPwdMsg('');
+      }, 3000);
     }
   };
 
@@ -836,220 +900,294 @@ export default function AdminView({
           </div>
         )}
 
-        {/* TAB 4: Bank QR payment configurations */}
+        {/* TAB 4: Bank QR payment configurations & Administrator Credentials */}
         {activeTab === 'settings' && (
-          <form onSubmit={handleSaveBankConfig} className="space-y-6">
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6">
+          <div className="space-y-6">
+            <form onSubmit={handleSaveBankConfig} className="space-y-6">
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900 flex items-center space-x-2">
+                    <CreditCard className="w-5 h-5 text-lime-500" />
+                    <span>Cấu hình Ngân hàng & Mã thanh toán QR</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">Thiết lập tài khoản ngân hàng của bạn. Thông tin này sẽ lập tức hiển thị kèm mã QR chuyển khoản khi người chơi tiến hành đặt sân.</p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-2">
+                  {/* Form fields */}
+                  <div className="lg:col-span-7 space-y-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wide">Tên ngân hàng *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="ví dụ: Techcombank, MB, VCB..."
+                          value={localBankName}
+                          onChange={(e) => {
+                            setLocalBankName(e.target.value);
+                            setIsDirty(true);
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold focus:border-slate-400 outline-none transition-all tracking-wide"
+                        />
+                        <p className="text-[10px] text-slate-400">Viết liền, không dấu nếu dùng VietQR tự động (ví dụ: TCB, MB, VCB...)</p>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wide">Số tài khoản ngân hàng *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Nhập số tài khoản..."
+                          value={localAccountNumber}
+                          onChange={(e) => {
+                            setLocalAccountNumber(e.target.value.replace(/\s+/g, ''));
+                            setIsDirty(true);
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-mono tracking-wider font-extrabold focus:border-slate-400 outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wide">Tên chủ tài khoản *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="ví dụ: NGUYEN VAN A (VIẾT HOA KHÔNG DẤU)"
+                        value={localAccountOwner}
+                        onChange={(e) => {
+                          setLocalAccountOwner(e.target.value);
+                          setIsDirty(true);
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold uppercase tracking-wide focus:border-slate-400 outline-none transition-all"
+                      />
+                      <p className="text-[10px] text-slate-400">Nên viết IN HOA không dấu tương tự như trên thẻ ATM để bảo mật thanh toán.</p>
+                    </div>
+
+                    {/* Drag and Drop Custom File Upload for QR Image */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wide">
+                        Tải lên hình ảnh QR Tài khoản của bạn (Kéo thả hoặc bấm chọn)
+                      </label>
+                      <div
+                        onDragOver={handleQrDragOver}
+                        onDragLeave={handleQrDragLeave}
+                        onDrop={handleQrDrop}
+                        onClick={() => document.getElementById('qr-file-picker')?.click()}
+                        className={`border-2 border-dashed rounded-3xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-3 ${
+                          isDragging 
+                            ? 'border-lime-500 bg-lime-50/50' 
+                            : 'border-slate-200 hover:border-slate-400 bg-slate-50 hover:bg-slate-100/40'
+                        }`}
+                      >
+                        <input
+                          type="file"
+                          id="qr-file-picker"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleQrFileChange}
+                        />
+                        
+                        {localQrCodeUrl && (localQrCodeUrl.startsWith('data:') || localQrCodeUrl.includes('base64')) ? (
+                          <div className="flex flex-col items-center gap-2.5" onClick={(e) => e.stopPropagation()}>
+                            <div className="w-24 h-24 border border-slate-200 rounded-2xl overflow-hidden bg-white p-1.5 shadow-inner">
+                              <img src={localQrCodeUrl} className="w-full h-full object-contain" alt="QR đã tải lên" />
+                            </div>
+                            <span className="text-[11px] font-black text-lime-700 flex items-center gap-1 bg-lime-100/80 px-2.5 py-1 rounded-full">
+                              <Check className="w-3 h-3 text-lime-600 stroke-[3]" />
+                              <span>Đã nhận hình ảnh mã QR tải lên của bạn</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLocalQrCodeUrl('');
+                                setIsDirty(true);
+                              }}
+                              className="text-[10px] text-red-650 font-extrabold uppercase bg-red-50 hover:bg-red-100 px-3.5 py-2 rounded-full transition-all border border-red-100 active:scale-95 animate-fade-in"
+                            >
+                              Xóa & Sử dụng mã VietQR tự sinh
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="p-3 bg-white shadow-sm border border-slate-200 rounded-2xl text-slate-400 group-hover:text-slate-600">
+                              <Upload className="w-6 h-6 text-lime-600 animate-pulse" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-extrabold text-slate-700">
+                                Kéo thả hình ảnh mã QR vào đây, hoặc <span className="text-lime-600 hover:text-lime-700 underline">bấm chọn tệp từ máy của bạn</span>
+                              </p>
+                              <p className="text-[10px] text-slate-400 mt-1 max-w-sm mx-auto leading-normal">
+                                Hệ thống sẽ mã hóa và lưu trữ trực tiếp ảnh QR của quý khách, tự động hiển thị khi người dùng chọn thanh toán chuyển khoản cực kỳ chuyên nghiệp.
+                              </p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wide">Đường dẫn mã QR thủ công (Tùy chọn phụ)</label>
+                      <input
+                        type="url"
+                        placeholder="https://example.com/my-fixed-qr.png"
+                        value={localQrCodeUrl.startsWith('data:') ? '' : localQrCodeUrl}
+                        onChange={(e) => {
+                          setLocalQrCodeUrl(e.target.value.trim());
+                          setIsDirty(true);
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:border-slate-400 outline-none transition-all"
+                      />
+                      <p className="text-[10px] text-slate-400">Nếu đã tự tải ảnh lên ở mục trên thì không cần điền liên kết tĩnh này.</p>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                      <button
+                        type="submit"
+                        disabled={saveStatus === 'saving'}
+                        className={`w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-xs tracking-wider uppercase transition-all shadow-md flex items-center justify-center gap-2 ${
+                          saveStatus === 'saving'
+                            ? 'bg-slate-400 text-white cursor-not-allowed'
+                            : saveStatus === 'saved'
+                            ? 'bg-lime-600 text-white animate-pulse'
+                            : saveStatus === 'error'
+                            ? 'bg-red-600 text-white'
+                            : 'bg-slate-900 hover:bg-slate-800 text-white'
+                        }`}
+                      >
+                        {saveStatus === 'saving' && (
+                          <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                        )}
+                        <span>
+                          {saveStatus === 'saving'
+                            ? 'Đang lưu cấu hình...'
+                            : saveStatus === 'saved'
+                            ? 'Đã lưu cấu hình thành công!'
+                            : saveStatus === 'error'
+                            ? 'Gặp lỗi khi lưu!'
+                            : 'Lưu cấu hình hoạt động'}
+                        </span>
+                      </button>
+
+                      {saveStatus === 'saved' && (
+                        <span className="text-xs text-lime-600 font-extrabold animate-pulse">
+                          ✓ Thông tin đã lưu xuống bộ lưu trữ của hệ thống máy chủ.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Real-time Preview Widget */}
+                  <div className="lg:col-span-5 flex flex-col items-center justify-center bg-slate-50 border border-slate-200 rounded-3xl p-6 text-center space-y-4">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest bg-slate-200/60 px-2.5 py-1 rounded-full">
+                      Xem trước bản xem của người đặt sân
+                    </span>
+
+                    <div className="w-40 h-40 bg-white border border-slate-200 rounded-2xl p-2 flex items-center justify-center overflow-hidden shadow-md relative group">
+                      <img
+                        src={localQrCodeUrl || `https://img.vietqr.io/image/${localBankName || 'bank'}-${localAccountNumber || '0000'}-compact.jpg?accountName=${encodeURIComponent(localAccountOwner || 'PICKLEPRO')}`}
+                        alt="Xem trước mã QR"
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 w-full text-left bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm text-xs">
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-slate-400 font-bold">NGÂN HÀNG:</span>
+                        <span className="font-black text-slate-800 uppercase">{localBankName || '(Chưa nhập)'}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-100 py-1.5">
+                        <span className="text-slate-400 font-bold">STK:</span>
+                        <span className="font-mono font-extrabold text-slate-900">{localAccountNumber || '(Chưa nhập)'}</span>
+                      </div>
+                      <div className="flex justify-between pt-1.5">
+                        <span className="text-slate-400 font-bold">CHỦ TÀI KHOẢN:</span>
+                        <span className="font-bold text-slate-800 uppercase">{localAccountOwner || '(Chưa nhập)'}</span>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-slate-400 max-w-xs leading-normal">
+                      {localQrCodeUrl ? 'Hệ thống đang hiển thị mã QR tự tải lên của bạn.' : 'Mã QR trên được liên kết trực tiếp bằng công nghệ VietQR để người dùng chỉ cần mở ứng dụng ngân hàng và quét là hoàn thành thanh toán.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </form>
+
+            {/* TAB 4B: Change Password configuration */}
+            <form onSubmit={handleSavePassword} className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6">
               <div>
                 <h3 className="text-xl font-bold text-slate-900 flex items-center space-x-2">
-                  <CreditCard className="w-5 h-5 text-lime-500" />
-                  <span>Cấu hình Ngân hàng & Mã thanh toán QR</span>
+                  <Lock className="w-5 h-5 text-lime-500" />
+                  <span>Đổi Mật Khẩu Chủ Sân</span>
                 </h3>
-                <p className="text-xs text-slate-400">Thiết lập tài khoản ngân hàng của bạn. Thông tin này sẽ lập tức hiển thị kèm mã QR chuyển khoản khi người chơi tiến hành đặt sân.</p>
+                <p className="text-xs text-slate-400">Thay đổi mật khẩu đăng nhập vào trang quản trị (chủ sân). Mật khẩu mới được bảo mật và lưu trữ lâu dài trên máy chủ.</p>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-2">
-                {/* Form fields */}
-                <div className="lg:col-span-7 space-y-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wide">Tên ngân hàng *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="ví dụ: Techcombank, MB, VCB..."
-                        value={localBankName}
-                        onChange={(e) => {
-                          setLocalBankName(e.target.value);
-                          setIsDirty(true);
-                        }}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold focus:border-slate-400 outline-none transition-all tracking-wide"
-                      />
-                      <p className="text-[10px] text-slate-400">Viết liền, không dấu nếu dùng VietQR tự động (ví dụ: TCB, MB, VCB...)</p>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wide">Số tài khoản ngân hàng *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Nhập số tài khoản..."
-                        value={localAccountNumber}
-                        onChange={(e) => {
-                          setLocalAccountNumber(e.target.value.replace(/\s+/g, ''));
-                          setIsDirty(true);
-                        }}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-mono tracking-wider font-extrabold focus:border-slate-400 outline-none transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wide">Tên chủ tài khoản *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="ví dụ: NGUYEN VAN A (VIẾT HOA KHÔNG DẤU)"
-                      value={localAccountOwner}
-                      onChange={(e) => {
-                        setLocalAccountOwner(e.target.value);
-                        setIsDirty(true);
-                      }}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold uppercase tracking-wide focus:border-slate-400 outline-none transition-all"
-                    />
-                    <p className="text-[10px] text-slate-400">Nên viết IN HOA không dấu tương tự như trên thẻ ATM để bảo mật thanh toán.</p>
-                  </div>
-
-                  {/* Drag and Drop Custom File Upload for QR Image */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wide">
-                      Tải lên hình ảnh QR Tài khoản của bạn (Kéo thả hoặc bấm chọn)
-                    </label>
-                    <div
-                      onDragOver={handleQrDragOver}
-                      onDragLeave={handleQrDragLeave}
-                      onDrop={handleQrDrop}
-                      onClick={() => document.getElementById('qr-file-picker')?.click()}
-                      className={`border-2 border-dashed rounded-3xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-3 ${
-                        isDragging 
-                          ? 'border-lime-500 bg-lime-50/50' 
-                          : 'border-slate-200 hover:border-slate-400 bg-slate-50 hover:bg-slate-100/40'
-                      }`}
-                    >
-                      <input
-                        type="file"
-                        id="qr-file-picker"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleQrFileChange}
-                      />
-                      
-                      {localQrCodeUrl && (localQrCodeUrl.startsWith('data:') || localQrCodeUrl.includes('base64')) ? (
-                        <div className="flex flex-col items-center gap-2.5" onClick={(e) => e.stopPropagation()}>
-                          <div className="w-24 h-24 border border-slate-200 rounded-2xl overflow-hidden bg-white p-1.5 shadow-inner">
-                            <img src={localQrCodeUrl} className="w-full h-full object-contain" alt="QR đã tải lên" />
-                          </div>
-                          <span className="text-[11px] font-black text-lime-700 flex items-center gap-1 bg-lime-100/80 px-2.5 py-1 rounded-full">
-                            <Check className="w-3 h-3 text-lime-600 stroke-[3]" />
-                            <span>Đã nhận hình ảnh mã QR tải lên của bạn</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setLocalQrCodeUrl('');
-                              setIsDirty(true);
-                            }}
-                            className="text-[10px] text-red-600 font-extrabold uppercase bg-red-50 hover:bg-red-100 px-3.5 py-2 rounded-full transition-all border border-red-100 active:scale-95"
-                          >
-                            Xóa & Sử dụng mã VietQR tự sinh
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="p-3 bg-white shadow-sm border border-slate-200 rounded-2xl text-slate-400 group-hover:text-slate-600">
-                            <Upload className="w-6 h-6 text-lime-600 animate-pulse" />
-                          </div>
-                          <div>
-                            <p className="text-xs font-extrabold text-slate-700">
-                              Kéo thả hình ảnh mã QR vào đây, hoặc <span className="text-lime-600 hover:text-lime-700 underline">bấm chọn tệp từ máy của bạn</span>
-                            </p>
-                            <p className="text-[10px] text-slate-400 mt-1 max-w-sm mx-auto leading-normal">
-                              Hệ thống sẽ mã hóa và lưu trữ trực tiếp ảnh QR của quý khách, tự động hiển thị khi người dùng chọn thanh toán chuyển khoản cực kỳ chuyên nghiệp.
-                            </p>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wide">Đường dẫn mã QR thủ công (Tùy chọn phụ)</label>
-                    <input
-                      type="url"
-                      placeholder="https://example.com/my-fixed-qr.png"
-                      value={localQrCodeUrl.startsWith('data:') ? '' : localQrCodeUrl}
-                      onChange={(e) => {
-                        setLocalQrCodeUrl(e.target.value.trim());
-                        setIsDirty(true);
-                      }}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:border-slate-400 outline-none transition-all"
-                    />
-                    <p className="text-[10px] text-slate-400">Nếu đã tự tải ảnh lên ở mục trên thì không cần điền liên kết tĩnh này.</p>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
-                    <button
-                      type="submit"
-                      disabled={saveStatus === 'saving'}
-                      className={`w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-xs tracking-wider uppercase transition-all shadow-md flex items-center justify-center gap-2 ${
-                        saveStatus === 'saving'
-                          ? 'bg-slate-400 text-white cursor-not-allowed'
-                          : saveStatus === 'saved'
-                          ? 'bg-lime-600 text-white animate-pulse'
-                          : saveStatus === 'error'
-                          ? 'bg-red-600 text-white'
-                          : 'bg-slate-900 hover:bg-slate-800 text-white'
-                      }`}
-                    >
-                      {saveStatus === 'saving' && (
-                        <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                      )}
-                      <span>
-                        {saveStatus === 'saving'
-                          ? 'Đang lưu cấu hình...'
-                          : saveStatus === 'saved'
-                          ? 'Đã lưu cấu hình thành công!'
-                          : saveStatus === 'error'
-                          ? 'Gặp lỗi khi lưu!'
-                          : 'Lưu cấu hình hoạt động'}
-                      </span>
-                    </button>
-
-                    {saveStatus === 'saved' && (
-                      <span className="text-xs text-lime-600 font-extrabold animate-pulse">
-                        ✓ Thông tin đã lưu xuống bộ lưu trữ của hệ thống máy chủ.
-                      </span>
-                    )}
-                  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl pt-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wide">Mật khẩu mới *</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Nhập mật khẩu mới..."
+                    value={newPwd}
+                    onChange={(e) => setNewPwd(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold focus:border-slate-400 outline-none transition-all tracking-wide"
+                  />
                 </div>
 
-                {/* Real-time Preview Widget */}
-                <div className="lg:col-span-5 flex flex-col items-center justify-center bg-slate-50 border border-slate-200 rounded-3xl p-6 text-center space-y-4">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest bg-slate-200/60 px-2.5 py-1 rounded-full">
-                    Xem trước bản xem của người đặt sân
+                <div className="space-y-1.5">
+                  <label className="text-xs font-extrabold text-slate-500 uppercase tracking-wide">Xác nhận mật khẩu mới *</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Nhập lại mật khẩu mới..."
+                    value={confirmPwd}
+                    onChange={(e) => setConfirmPwd(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold focus:border-slate-400 outline-none transition-all tracking-wide"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={pwdSaveStatus === 'saving'}
+                  className={`w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-xs tracking-wider uppercase transition-all shadow-md flex items-center justify-center gap-2 ${
+                    pwdSaveStatus === 'saving'
+                      ? 'bg-slate-400 text-white cursor-not-allowed'
+                      : pwdSaveStatus === 'saved'
+                      ? 'bg-lime-600 text-white animate-pulse'
+                      : pwdSaveStatus === 'error'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-slate-900 hover:bg-slate-800 text-white'
+                  }`}
+                >
+                  {pwdSaveStatus === 'saving' && (
+                    <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                  )}
+                  <span>
+                    {pwdSaveStatus === 'saving'
+                      ? 'Đang đổi mật khẩu...'
+                      : pwdSaveStatus === 'saved'
+                      ? 'Đã cập nhật mật khẩu!'
+                      : pwdSaveStatus === 'error'
+                      ? 'Lỗi cập nhật!'
+                      : 'Cập nhật mật khẩu'}
                   </span>
+                </button>
 
-                  <div className="w-40 h-40 bg-white border border-slate-200 rounded-2xl p-2 flex items-center justify-center overflow-hidden shadow-md relative group">
-                    <img
-                      src={localQrCodeUrl || `https://img.vietqr.io/image/${localBankName || 'bank'}-${localAccountNumber || '0000'}-compact.jpg?accountName=${encodeURIComponent(localAccountOwner || 'PICKLEPRO')}`}
-                      alt="Xem trước mã QR"
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5 w-full text-left bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm text-xs">
-                    <div className="flex justify-between border-b border-slate-100 pb-1.5">
-                      <span className="text-slate-400 font-bold">NGÂN HÀNG:</span>
-                      <span className="font-black text-slate-800 uppercase">{localBankName || '(Chưa nhập)'}</span>
-                    </div>
-                    <div className="flex justify-between border-b border-slate-100 py-1.5">
-                      <span className="text-slate-400 font-bold">STK:</span>
-                      <span className="font-mono font-extrabold text-slate-900">{localAccountNumber || '(Chưa nhập)'}</span>
-                    </div>
-                    <div className="flex justify-between pt-1.5">
-                      <span className="text-slate-400 font-bold">CHỦ TÀI KHOẢN:</span>
-                      <span className="font-bold text-slate-800 uppercase">{localAccountOwner || '(Chưa nhập)'}</span>
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-400 max-w-xs leading-normal">
-                    {localQrCodeUrl ? 'Hệ thống đang hiển thị mã QR tự tải lên của bạn.' : 'Mã QR trên được liên kết trực tiếp bằng công nghệ VietQR để người dùng chỉ cần mở ứng dụng ngân hàng và quét là hoàn thành thanh toán.'}
-                  </p>
-                </div>
+                {pwdMsg && (
+                  <span className={`text-xs font-extrabold ${pwdSaveStatus === 'error' ? 'text-red-650' : 'text-lime-700 animate-pulse'}`}>
+                    {pwdMsg}
+                  </span>
+                )}
               </div>
-            </div>
-          </form>
+            </form>
+          </div>
         )}
 
       </div>

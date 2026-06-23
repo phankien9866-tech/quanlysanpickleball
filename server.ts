@@ -15,6 +15,26 @@ import {
 
 const PORT = Number(process.env.PORT) || 3000;
 const DATA_FILE_PATH = path.join(process.cwd(), "data-store.json");
+const PASSWORD_FILE_PATH = path.join(process.cwd(), "src", "admin-password.txt");
+
+function getAdminPassword(): string {
+  try {
+    if (fs.existsSync(PASSWORD_FILE_PATH)) {
+      return fs.readFileSync(PASSWORD_FILE_PATH, "utf-8").trim() || "0911370429";
+    }
+  } catch (err) {
+    console.error("Error reading admin password file:", err);
+  }
+  return "0911370429";
+}
+
+function saveAdminPassword(pwd: string) {
+  try {
+    fs.writeFileSync(PASSWORD_FILE_PATH, pwd.trim(), "utf-8");
+  } catch (err) {
+    console.error("Error writing admin password file:", err);
+  }
+}
 
 // Helper to get today's date offset
 const getTodayDateString = (offsetDays = 0) => {
@@ -259,6 +279,27 @@ async function startServer() {
     saveDataToFile();
     saveBankConfigToDb(state.bankConfig).catch(console.error);
     res.json(state.bankConfig);
+  });
+
+  // API ROUTE: Verify Admin Password
+  app.post("/api/admin/verify-password", (req, res) => {
+    const { password } = req.body;
+    const currentPassword = getAdminPassword();
+    if (password === currentPassword) {
+      res.json({ success: true });
+    } else {
+      res.status(401).json({ success: false, message: "Mật khẩu chủ sân không chính xác!" });
+    }
+  });
+
+  // API ROUTE: Change Admin Password
+  app.post("/api/admin/change-password", (req, res) => {
+    const { password } = req.body;
+    if (!password || password.trim().length === 0) {
+      return res.status(400).json({ success: false, message: "Mật khẩu không được để trống!" });
+    }
+    saveAdminPassword(password);
+    res.json({ success: true, message: "Thay đổi mật khẩu thành công!" });
   });
 
   // Vite Integration

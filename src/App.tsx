@@ -104,20 +104,30 @@ export default function App() {
     }
   };
 
-  const handleVerifyPassword = (e: React.FormEvent) => {
+  const handleVerifyPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (passwordInput === '0911370429') {
-      setIsAdminAuthenticated(true);
-      try {
-        sessionStorage.setItem('pb_admin_auth', 'true');
-      } catch (err) {}
-      setRole('admin');
-      setShowPasswordModal(false);
-      setPasswordError('');
-      // Force instant refresh on auth
-      fetchAllData();
-    } else {
-      setPasswordError('Mật khẩu của chủ sân không chính xác. Hãy vui lòng thử lại!');
+    try {
+      const response = await fetch('/api/admin/verify-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordInput }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setIsAdminAuthenticated(true);
+        try {
+          sessionStorage.setItem('pb_admin_auth', 'true');
+        } catch (err) {}
+        setRole('admin');
+        setShowPasswordModal(false);
+        setPasswordError('');
+        // Force instant refresh on auth
+        fetchAllData();
+      } else {
+        setPasswordError('Mật khẩu của chủ sân không chính xác. Hãy vui lòng thử lại!');
+      }
+    } catch (err) {
+      setPasswordError('Lỗi kết nối máy chủ, vui lòng thử lại!');
     }
   };
 
