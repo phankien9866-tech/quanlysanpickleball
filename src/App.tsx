@@ -25,9 +25,29 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [passwordError, setPasswordError] = useState('');
 
-  // 2. Database States synchronized with real-time server and localStorage fallback
-  const [courts, setCourts] = useState<Court[]>(INITIAL_COURTS);
-  const [bookings, setBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
+  // 2. Database States synchronized with browser's localStorage
+  const [courts, setCourts] = useState<Court[]>(() => {
+    try {
+      const saved = localStorage.getItem('pb_courts');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    localStorage.setItem('pb_courts', JSON.stringify(INITIAL_COURTS));
+    return INITIAL_COURTS;
+  });
+
+  const [bookings, setBookings] = useState<Booking[]>(() => {
+    try {
+      const saved = localStorage.getItem('pb_bookings');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    localStorage.setItem('pb_bookings', JSON.stringify(INITIAL_BOOKINGS));
+    return INITIAL_BOOKINGS;
+  });
+
   const [myBookedIds, setMyBookedIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('pb_my_bookings');
@@ -37,44 +57,69 @@ export default function App() {
     }
   });
 
-  const [bankConfig, setBankConfig] = useState<BankConfig>({
-    bankName: 'Techcombank',
-    accountNumber: '190356789999',
-    accountOwner: 'PICKLEPRO',
-    qrCodeUrl: '',
+  const [bankConfig, setBankConfig] = useState<BankConfig>(() => {
+    const defaultBank: BankConfig = {
+      bankName: 'Techcombank',
+      accountNumber: '190356789999',
+      accountOwner: 'PICKLEPRO',
+      qrCodeUrl: '',
+    };
+    try {
+      const saved = localStorage.getItem('pb_bank_config');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    localStorage.setItem('pb_bank_config', JSON.stringify(defaultBank));
+    return defaultBank;
+  });
+
+  const [adminPassword, setAdminPassword] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('pb_admin_password');
+      if (saved) return saved;
+    } catch (e) {
+      console.error(e);
+    }
+    localStorage.setItem('pb_admin_password', '0911370429');
+    return '0911370429';
   });
 
   // Booking history view trigger helper state
   const [showMyBookingsModal, setShowMyBookingsModal] = useState(false);
 
-  // Synchronize dynamic lists with the server
-  const fetchAllData = async () => {
+  // Synchronize dynamic lists with local storage
+  const fetchAllData = () => {
     try {
-      const [resCourts, resBookings, resBank] = await Promise.all([
-        fetch('/api/courts').then(r => r.json()),
-        fetch('/api/bookings').then(r => r.json()),
-        fetch('/api/bank-config').then(r => r.json()),
-      ]);
-
-      if (Array.isArray(resCourts)) {
-        setCourts(resCourts);
+      const savedCourts = localStorage.getItem('pb_courts');
+      if (savedCourts) {
+        setCourts(JSON.parse(savedCourts));
       }
-      if (Array.isArray(resBookings)) {
-        // Sort bookings by creation date descending
-        const sorted = [...resBookings].sort(
+
+      const savedBookings = localStorage.getItem('pb_bookings');
+      if (savedBookings) {
+        const parsed = JSON.parse(savedBookings);
+        const sorted = [...parsed].sort(
           (a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()
         );
         setBookings(sorted);
       }
-      if (resBank && resBank.bankName) {
-        setBankConfig(resBank);
+
+      const savedBank = localStorage.getItem('pb_bank_config');
+      if (savedBank) {
+        setBankConfig(JSON.parse(savedBank));
+      }
+
+      const savedPwd = localStorage.getItem('pb_admin_password');
+      if (savedPwd) {
+        setAdminPassword(savedPwd);
       }
     } catch (err) {
-      console.warn('Network syncing pending / offline:', err);
+      console.warn('Error fetching data from local storage:', err);
     }
   };
 
-  // Initial load and fast polling interval (every 3 seconds) for multi-device instant sync
+  // Initial load and fast polling interval (every 3 seconds) to ensure multi-tab sync
   useEffect(() => {
     fetchAllData();
     const interval = setInterval(() => {
@@ -104,241 +149,118 @@ export default function App() {
     }
   };
 
-  const handleVerifyPassword = async (e: React.FormEvent) => {
+  const handleVerifyPassword = (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      const response = await fetch('/api/admin/verify-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: passwordInput }),
-      });
-      const data = await response.json();
-      if (response.ok && data.success) {
-        setIsAdminAuthenticated(true);
-        try {
-          sessionStorage.setItem('pb_admin_auth', 'true');
-        } catch (err) {}
-        setRole('admin');
-        setShowPasswordModal(false);
-        setPasswordError('');
-        // Force instant refresh on auth
-        fetchAllData();
-      } else {
-        setPasswordError('Mật khẩu của chủ sân không chính xác. Hãy vui lòng thử lại!');
-      }
-    } catch (err) {
-      setPasswordError('Lỗi kết nối máy chủ, vui lòng thử lại!');
+    const currentPwd = localStorage.getItem('pb_admin_password') || '0911370429';
+    if (passwordInput === currentPwd) {
+      setIsAdminAuthenticated(true);
+      try {
+        sessionStorage.setItem('pb_admin_auth', 'true');
+      } catch (err) {}
+      setRole('admin');
+      setShowPasswordModal(false);
+      setPasswordError('');
+      fetchAllData();
+    } else {
+      setPasswordError('Mật khẩu của chủ sân không chính xác. Hãy vui lòng thử lại!');
     }
   };
 
-  // 3. Customer Operations with optimistic local state + instant server POST
-  const handleAddBooking = async (newBooking: Booking | Booking[]) => {
+  // 3. Customer Operations with instant localStorage update
+  const handleAddBooking = (newBooking: Booking | Booking[]) => {
     const bookingsToAdd = Array.isArray(newBooking) ? newBooking : [newBooking];
 
-    // Optimistic local update
-    setBookings(prev => [...bookingsToAdd, ...prev]);
-    setMyBookedIds(prev => [...bookingsToAdd.map(b => b.id), ...prev]);
+    setBookings(prev => {
+      const updated = [...bookingsToAdd, ...prev];
+      localStorage.setItem('pb_bookings', JSON.stringify(updated));
+      return updated;
+    });
 
-    try {
-      const response = await fetch('/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newBooking),
-      });
-      if (response.ok) {
-        fetchAllData();
-      }
-    } catch (e) {
-      console.error('Error sending booking:', e);
-    }
+    setMyBookedIds(prev => {
+      const updated = [...bookingsToAdd.map(b => b.id), ...prev];
+      localStorage.setItem('pb_my_bookings', JSON.stringify(updated));
+      return updated;
+    });
   };
 
-  const handleCancelBooking = async (bookingId: string | string[]) => {
+  const handleCancelBooking = (bookingId: string | string[]) => {
     const ids = Array.isArray(bookingId) ? bookingId : [bookingId];
     if (ids.length === 0) return;
 
-    // Optimistic local update
-    setBookings(prev =>
-      prev.map(b => ids.includes(b.id) ? { ...b, status: 'canceled' as const } : b)
-    );
-
-    try {
-      let response;
-      if (Array.isArray(bookingId)) {
-        response = await fetch(`/api/bookings/bulk/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookingIds: ids, status: 'canceled' }),
-        });
-      } else {
-        response = await fetch(`/api/bookings/${bookingId}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'canceled' }),
-        });
-      }
-      if (response.ok) {
-        fetchAllData();
-      }
-    } catch (e) {
-      console.error('Error changing booking status:', e);
-    }
+    setBookings(prev => {
+      const updated = prev.map(b => ids.includes(b.id) ? { ...b, status: 'canceled' as const } : b);
+      localStorage.setItem('pb_bookings', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   // 4. Admin Operations
-  const handleConfirmBooking = async (bookingId: string | string[]) => {
+  const handleConfirmBooking = (bookingId: string | string[]) => {
     const ids = Array.isArray(bookingId) ? bookingId : [bookingId];
     if (ids.length === 0) return;
 
-    // Optimistic local update
-    setBookings(prev =>
-      prev.map(b => ids.includes(b.id) ? { ...b, status: 'confirmed' as const } : b)
-    );
-
-    try {
-      let response;
-      if (Array.isArray(bookingId)) {
-        response = await fetch(`/api/bookings/bulk/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookingIds: ids, status: 'confirmed' }),
-        });
-      } else {
-        response = await fetch(`/api/bookings/${bookingId}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'confirmed' }),
-        });
-      }
-      if (response.ok) {
-        fetchAllData();
-      }
-    } catch (e) {
-      console.error(e);
-    }
+    setBookings(prev => {
+      const updated = prev.map(b => ids.includes(b.id) ? { ...b, status: 'confirmed' as const } : b);
+      localStorage.setItem('pb_bookings', JSON.stringify(updated));
+      return updated;
+    });
   };
 
-  const handleRejectBooking = async (bookingId: string | string[]) => {
+  const handleRejectBooking = (bookingId: string | string[]) => {
     const ids = Array.isArray(bookingId) ? bookingId : [bookingId];
     if (ids.length === 0) return;
 
-    // Optimistic local update
-    setBookings(prev =>
-      prev.map(b => ids.includes(b.id) ? { ...b, status: 'canceled' as const } : b)
-    );
-
-    try {
-      let response;
-      if (Array.isArray(bookingId)) {
-        response = await fetch(`/api/bookings/bulk/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookingIds: ids, status: 'canceled' }),
-        });
-      } else {
-        response = await fetch(`/api/bookings/${bookingId}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'canceled' }),
-        });
-      }
-      if (response.ok) {
-        fetchAllData();
-      }
-    } catch (e) {
-      console.error(e);
-    }
+    setBookings(prev => {
+      const updated = prev.map(b => ids.includes(b.id) ? { ...b, status: 'canceled' as const } : b);
+      localStorage.setItem('pb_bookings', JSON.stringify(updated));
+      return updated;
+    });
   };
 
-  const handleAddCourt = async (newCourt: Court) => {
-    // Optimistic local update
-    setCourts(prev => [...prev, newCourt]);
-
-    try {
-      const response = await fetch('/api/courts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCourt),
-      });
-      if (response.ok) {
-        fetchAllData();
-      }
-    } catch (e) {
-      console.error(e);
+  const handleAddCourt = (newCourt: Court) => {
+    const courtWithId = { ...newCourt };
+    if (!courtWithId.id) {
+      courtWithId.id = "court-" + Date.now();
     }
+    setCourts(prev => {
+      const updated = [...prev, courtWithId];
+      localStorage.setItem('pb_courts', JSON.stringify(updated));
+      return updated;
+    });
   };
 
-  const handleUpdateCourt = async (updatedCourt: Court) => {
-    // Optimistic local update
-    setCourts(prev =>
-      prev.map(c => c.id === updatedCourt.id ? updatedCourt : c)
-    );
-
-    try {
-      const response = await fetch('/api/courts', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedCourt),
-      });
-      if (response.ok) {
-        fetchAllData();
-      }
-    } catch (e) {
-      console.error(e);
-    }
+  const handleUpdateCourt = (updatedCourt: Court) => {
+    setCourts(prev => {
+      const updated = prev.map(c => c.id === updatedCourt.id ? updatedCourt : c);
+      localStorage.setItem('pb_courts', JSON.stringify(updated));
+      return updated;
+    });
   };
 
-  const handleUpdateCourtStatus = async (id: string, status: 'active' | 'maintenance' | 'inactive') => {
-    // Optimistic local update
-    setCourts(prev =>
-      prev.map(c => c.id === id ? { ...c, status } : c)
-    );
-
-    try {
-      const response = await fetch(`/api/courts/${id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      });
-      if (response.ok) {
-        fetchAllData();
-      }
-    } catch (e) {
-      console.error(e);
-    }
+  const handleUpdateCourtStatus = (id: string, status: 'active' | 'maintenance' | 'inactive') => {
+    setCourts(prev => {
+      const updated = prev.map(c => c.id === id ? { ...c, status } : c);
+      localStorage.setItem('pb_courts', JSON.stringify(updated));
+      return updated;
+    });
   };
 
-  const handleDeleteCourt = async (id: string) => {
-    // Optimistic local update
-    setCourts(prev => prev.filter(c => c.id !== id));
-
-    try {
-      const response = await fetch(`/api/courts/${id}`, {
-        method: 'DELETE',
-      });
-      if (response.ok) {
-        fetchAllData();
-      }
-    } catch (e) {
-      console.error(e);
-    }
+  const handleDeleteCourt = (id: string) => {
+    setCourts(prev => {
+      const updated = prev.filter(c => c.id !== id);
+      localStorage.setItem('pb_courts', JSON.stringify(updated));
+      return updated;
+    });
   };
 
-  const handleUpdateBankConfig = async (config: BankConfig) => {
+  const handleUpdateBankConfig = (config: BankConfig) => {
     setBankConfig(config);
+    localStorage.setItem('pb_bank_config', JSON.stringify(config));
+  };
 
-    try {
-      const response = await fetch('/api/bank-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-      if (response.ok) {
-        fetchAllData();
-      }
-    } catch (e) {
-      console.error(e);
-    }
+  const handleUpdateAdminPassword = (newPassword: string) => {
+    setAdminPassword(newPassword);
+    localStorage.setItem('pb_admin_password', newPassword);
   };
 
   return (
@@ -377,6 +299,7 @@ export default function App() {
             onDeleteCourt={handleDeleteCourt}
             bankConfig={bankConfig}
             onUpdateBankConfig={handleUpdateBankConfig}
+            onUpdateAdminPassword={handleUpdateAdminPassword}
           />
         )}
       </main>

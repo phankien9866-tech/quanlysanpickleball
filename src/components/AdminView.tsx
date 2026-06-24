@@ -43,6 +43,7 @@ interface AdminViewProps {
   onDeleteCourt: (id: string) => void;
   bankConfig: BankConfig;
   onUpdateBankConfig: (config: BankConfig) => void;
+  onUpdateAdminPassword: (newPassword: string) => void;
 }
 
 export default function AdminView({
@@ -55,7 +56,8 @@ export default function AdminView({
   onUpdateCourtStatus,
   onDeleteCourt,
   bankConfig,
-  onUpdateBankConfig
+  onUpdateBankConfig,
+  onUpdateAdminPassword
 }: AdminViewProps) {
   
   const [activeTab, setActiveTab ] = useState<'bookings' | 'courts' | 'stats' | 'settings'>('bookings');
@@ -224,32 +226,18 @@ export default function AdminView({
 
     setPwdSaveStatus('saving');
     try {
-      const response = await fetch('/api/admin/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: newPwd.trim() }),
-      });
-      const data = await response.json();
-      if (response.ok && data.success) {
-        setPwdSaveStatus('saved');
-        setPwdMsg('Đã cập nhật mật khẩu mới của chủ sân thành công!');
-        setNewPwd('');
-        setConfirmPwd('');
-        setTimeout(() => {
-          setPwdSaveStatus('idle');
-          setPwdMsg('');
-        }, 3000);
-      } else {
-        setPwdSaveStatus('error');
-        setPwdMsg(data.message || 'Có lỗi xảy ra khi lưu mật khẩu!');
-        setTimeout(() => {
-          setPwdSaveStatus('idle');
-          setPwdMsg('');
-        }, 3000);
-      }
+      onUpdateAdminPassword(newPwd.trim());
+      setPwdSaveStatus('saved');
+      setPwdMsg('Đã cập nhật mật khẩu mới của chủ sân thành công!');
+      setNewPwd('');
+      setConfirmPwd('');
+      setTimeout(() => {
+        setPwdSaveStatus('idle');
+        setPwdMsg('');
+      }, 3000);
     } catch (err) {
       setPwdSaveStatus('error');
-      setPwdMsg('Lỗi kết nối máy chủ!');
+      setPwdMsg('Có lỗi xảy ra khi lưu mật khẩu!');
       setTimeout(() => {
         setPwdSaveStatus('idle');
         setPwdMsg('');
