@@ -101,7 +101,24 @@ export default function App() {
   const [showMyBookingsModal, setShowMyBookingsModal] = useState(false);
 
   // Synchronize dynamic lists with local storage & server database
-  const fetchAllData = async () => {
+  const isWritingRef = React.useRef<number>(0);
+
+  const startWrite = () => {
+    isWritingRef.current += 1;
+  };
+
+  const endWrite = () => {
+    setTimeout(() => {
+      isWritingRef.current = Math.max(0, isWritingRef.current - 1);
+    }, 2000);
+  };
+
+  // Synchronize dynamic lists with local storage & server database
+  const fetchAllData = async (force = false) => {
+    if (isWritingRef.current > 0 && !force) {
+      console.log('Skipping fetchAllData due to active write locks.');
+      return;
+    }
     try {
       const [resCourts, resBookings, resBank, resPwd] = await Promise.all([
         getCourtsFromFb(),
@@ -206,6 +223,7 @@ export default function App() {
 
   // 3. Customer Operations with instant localStorage update + Firebase Web SDK sync
   const handleAddBooking = async (newBooking: Booking | Booking[]) => {
+    startWrite();
     const bookingsToAdd = Array.isArray(newBooking) ? newBooking : [newBooking];
 
     // Optimistic UI updates
@@ -225,15 +243,21 @@ export default function App() {
       for (const booking of bookingsToAdd) {
         await saveBookingToFb(booking);
       }
-      fetchAllData();
+      await fetchAllData(true);
     } catch (e) {
       console.error('Error saving booking to Firestore:', e);
+    } finally {
+      endWrite();
     }
   };
 
   const handleCancelBooking = async (bookingId: string | string[]) => {
+    startWrite();
     const ids = Array.isArray(bookingId) ? bookingId : [bookingId];
-    if (ids.length === 0) return;
+    if (ids.length === 0) {
+      endWrite();
+      return;
+    }
 
     // Optimistic UI update
     let updatedBookings: Booking[] = [];
@@ -251,16 +275,22 @@ export default function App() {
           await saveBookingToFb(found);
         }
       }
-      fetchAllData();
+      await fetchAllData(true);
     } catch (e) {
       console.error('Error cancelling booking in Firestore:', e);
+    } finally {
+      endWrite();
     }
   };
 
   // 4. Admin Operations
   const handleConfirmBooking = async (bookingId: string | string[]) => {
+    startWrite();
     const ids = Array.isArray(bookingId) ? bookingId : [bookingId];
-    if (ids.length === 0) return;
+    if (ids.length === 0) {
+      endWrite();
+      return;
+    }
 
     // Optimistic UI update
     let updatedBookings: Booking[] = [];
@@ -278,15 +308,21 @@ export default function App() {
           await saveBookingToFb(found);
         }
       }
-      fetchAllData();
+      await fetchAllData(true);
     } catch (e) {
       console.error('Error confirming booking in Firestore:', e);
+    } finally {
+      endWrite();
     }
   };
 
   const handleRejectBooking = async (bookingId: string | string[]) => {
+    startWrite();
     const ids = Array.isArray(bookingId) ? bookingId : [bookingId];
-    if (ids.length === 0) return;
+    if (ids.length === 0) {
+      endWrite();
+      return;
+    }
 
     // Optimistic UI update
     let updatedBookings: Booking[] = [];
@@ -304,13 +340,16 @@ export default function App() {
           await saveBookingToFb(found);
         }
       }
-      fetchAllData();
+      await fetchAllData(true);
     } catch (e) {
       console.error('Error rejecting booking in Firestore:', e);
+    } finally {
+      endWrite();
     }
   };
 
   const handleAddCourt = async (newCourt: Court) => {
+    startWrite();
     const courtWithId = { ...newCourt };
     if (!courtWithId.id) {
       courtWithId.id = "court-" + Date.now();
@@ -325,13 +364,16 @@ export default function App() {
 
     try {
       await addCourtToFb(courtWithId);
-      fetchAllData();
+      await fetchAllData(true);
     } catch (e) {
       console.error('Error adding court to Firestore:', e);
+    } finally {
+      endWrite();
     }
   };
 
   const handleUpdateCourt = async (updatedCourt: Court) => {
+    startWrite();
     // Optimistic UI update
     setCourts(prev => {
       const updated = prev.map(c => c.id === updatedCourt.id ? updatedCourt : c);
@@ -341,13 +383,16 @@ export default function App() {
 
     try {
       await updateCourtToFb(updatedCourt);
-      fetchAllData();
+      await fetchAllData(true);
     } catch (e) {
       console.error('Error updating court in Firestore:', e);
+    } finally {
+      endWrite();
     }
   };
 
   const handleUpdateCourtStatus = async (id: string, status: 'active' | 'maintenance' | 'inactive') => {
+    startWrite();
     // Optimistic UI update
     let updatedCourts: Court[] = [];
     setCourts(prev => {
@@ -362,13 +407,16 @@ export default function App() {
       if (found) {
         await updateCourtToFb(found);
       }
-      fetchAllData();
+      await fetchAllData(true);
     } catch (e) {
       console.error('Error updating court status in Firestore:', e);
+    } finally {
+      endWrite();
     }
   };
 
   const handleDeleteCourt = async (id: string) => {
+    startWrite();
     // Optimistic UI update
     setCourts(prev => {
       const updated = prev.filter(c => c.id !== id);
@@ -378,33 +426,41 @@ export default function App() {
 
     try {
       await deleteCourtFromFb(id);
-      fetchAllData();
+      await fetchAllData(true);
     } catch (e) {
       console.error('Error deleting court from Firestore:', e);
+    } finally {
+      endWrite();
     }
   };
 
   const handleUpdateBankConfig = async (config: BankConfig) => {
+    startWrite();
     setBankConfig(config);
     localStorage.setItem('pb_bank_config', JSON.stringify(config));
 
     try {
       await saveBankConfigToFb(config);
-      fetchAllData();
+      await fetchAllData(true);
     } catch (e) {
       console.error('Error saving bank config to Firestore:', e);
+    } finally {
+      endWrite();
     }
   };
 
   const handleUpdateAdminPassword = async (newPassword: string) => {
+    startWrite();
     setAdminPassword(newPassword);
     localStorage.setItem('pb_admin_password', newPassword);
 
     try {
       await saveAdminPasswordToFb(newPassword.trim());
-      fetchAllData();
+      await fetchAllData(true);
     } catch (e) {
       console.error('Error saving admin password to Firestore:', e);
+    } finally {
+      endWrite();
     }
   };
 
