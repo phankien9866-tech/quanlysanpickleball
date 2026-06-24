@@ -35,15 +35,15 @@ import { motion, AnimatePresence } from 'motion/react';
 interface AdminViewProps {
   courts: Court[];
   bookings: Booking[];
-  onConfirmBooking: (bookingId: string | string[]) => void;
-  onRejectBooking: (bookingId: string | string[]) => void;
-  onAddCourt: (court: Court) => void;
-  onUpdateCourt: (court: Court) => void;
-  onUpdateCourtStatus: (id: string, status: 'active' | 'maintenance' | 'inactive') => void;
-  onDeleteCourt: (id: string) => void;
+  onConfirmBooking: (bookingId: string | string[]) => Promise<void> | void;
+  onRejectBooking: (bookingId: string | string[]) => Promise<void> | void;
+  onAddCourt: (court: Court) => Promise<void> | void;
+  onUpdateCourt: (court: Court) => Promise<void> | void;
+  onUpdateCourtStatus: (id: string, status: 'active' | 'maintenance' | 'inactive') => Promise<void> | void;
+  onDeleteCourt: (id: string) => Promise<void> | void;
   bankConfig: BankConfig;
-  onUpdateBankConfig: (config: BankConfig) => void;
-  onUpdateAdminPassword: (newPassword: string) => void;
+  onUpdateBankConfig: (config: BankConfig) => Promise<void> | void;
+  onUpdateAdminPassword: (newPassword: string) => Promise<void> | void;
 }
 
 export default function AdminView({
@@ -183,11 +183,11 @@ export default function AdminView({
     }
   };
 
-  const handleSaveBankConfig = (e: React.FormEvent) => {
+  const handleSaveBankConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveStatus('saving');
     try {
-      onUpdateBankConfig({
+      await onUpdateBankConfig({
         bankName: localBankName.trim(),
         accountNumber: localAccountNumber.replace(/\s+/g, ''),
         accountOwner: localAccountOwner.trim().toUpperCase(),
@@ -226,7 +226,7 @@ export default function AdminView({
 
     setPwdSaveStatus('saving');
     try {
-      onUpdateAdminPassword(newPwd.trim());
+      await onUpdateAdminPassword(newPwd.trim());
       setPwdSaveStatus('saved');
       setPwdMsg('Đã cập nhật mật khẩu mới của chủ sân thành công!');
       setNewPwd('');
@@ -269,7 +269,7 @@ export default function AdminView({
     setShowEditCourtModal(true);
   };
 
-  const handleSaveEditCourt = (e: React.FormEvent) => {
+  const handleSaveEditCourt = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCourt || !editCourtName || !editCourtLocation) return;
 
@@ -293,7 +293,7 @@ export default function AdminView({
       courtCount: Number(editCourtCount),
     };
 
-    onUpdateCourt(updated);
+    await onUpdateCourt(updated);
     setShowEditCourtModal(false);
     setEditingCourt(null);
   };
@@ -474,7 +474,7 @@ export default function AdminView({
     return Object.values(data);
   }, [bookings, courts]);
 
-  const handleCreateCourt = (e: React.FormEvent) => {
+  const handleCreateCourt = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCourtName || !newCourtLocation) return;
 
@@ -500,7 +500,7 @@ export default function AdminView({
       courtCount: Number(newCourtCount || 1)
     };
 
-    onAddCourt(newCourt);
+    await onAddCourt(newCourt);
     
     // Clear and close
     setNewCourtName('');
@@ -825,7 +825,7 @@ export default function AdminView({
                                   {group.status === 'pending' ? (
                                     <>
                                       <button
-                                        onClick={() => onConfirmBooking(group.bookings.map(b => b.id))}
+                                        onClick={async () => await onConfirmBooking(group.bookings.map(b => b.id))}
                                         className="p-1 px-2.5 bg-slate-900 hover:bg-lime-400 hover:text-slate-900 text-white rounded-lg flex items-center space-x-1 font-bold text-xs shadow-sm transition-all cursor-pointer"
                                         title={group.isGroup ? "Duyệt toàn bộ gói cố định này" : "Duyệt đơn"}
                                         id={`btn-approve-${group.id}`}
@@ -834,7 +834,7 @@ export default function AdminView({
                                         <span>{group.isGroup ? "Duyệt Gói" : "Duyệt"}</span>
                                       </button>
                                       <button
-                                        onClick={() => onRejectBooking(group.bookings.map(b => b.id))}
+                                        onClick={async () => await onRejectBooking(group.bookings.map(b => b.id))}
                                         className="p-1 px-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg flex items-center space-x-1 font-bold text-xs shadow-sm transition-all cursor-pointer"
                                         title={group.isGroup ? "Hủy toàn bộ gói cố định này" : "Hủy đơn"}
                                         id={`btn-deny-${group.id}`}
@@ -854,12 +854,12 @@ export default function AdminView({
                                       </span>
                                       {group.status === 'confirmed' && (
                                         <button
-                                          onClick={() => {
+                                          onClick={async () => {
                                             const confirmMsg = group.isGroup 
                                               ? 'Hủy toàn bộ gói đặt sân cố định này? Tất cả các buổi trong gói sẽ bị chuyển thành đã hủy.'
                                               : 'Hủy giao dịch lịch này?';
                                             if (window.confirm(confirmMsg)) {
-                                              onRejectBooking(group.bookings.map(b => b.id));
+                                              await onRejectBooking(group.bookings.map(b => b.id));
                                             }
                                           }}
                                           className="p-1 text-rose-500 hover:text-white hover:bg-rose-500 rounded transition-all cursor-pointer"
@@ -1019,7 +1019,7 @@ export default function AdminView({
                       <span className="text-xs font-bold text-slate-400">Trạng thái:</span>
                       <select
                         value={court.status}
-                        onChange={(e) => onUpdateCourtStatus(court.id, e.target.value as any)}
+                        onChange={async (e) => await onUpdateCourtStatus(court.id, e.target.value as any)}
                         className="bg-slate-100 font-bold text-xs p-1 rounded-md border-none focus:ring-1 focus:ring-lime-500 cursor-pointer"
                         id={`select-status-${court.id}`}
                       >
@@ -1040,9 +1040,9 @@ export default function AdminView({
                       </button>
 
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           if (window.confirm('Xóa vĩnh viễn sân này và các dữ liệu liên đới không?')) {
-                            onDeleteCourt(court.id);
+                            await onDeleteCourt(court.id);
                           }
                         }}
                         className="p-1 px-2.5 hover:bg-rose-50 rounded text-rose-500 hover:text-rose-700 text-xs font-bold flex items-center space-x-1 cursor-pointer transition-colors border border-rose-100/40"

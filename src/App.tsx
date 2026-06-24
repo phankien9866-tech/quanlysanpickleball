@@ -119,18 +119,26 @@ export default function App() {
       console.log('Skipping fetchAllData due to active write locks.');
       return;
     }
-    try {
-      const [resCourts, resBookings, resBank, resPwd] = await Promise.all([
-        getCourtsFromFb(),
-        getBookingsFromFb(),
-        getBankConfigFromFb(),
-        getAdminPasswordFromFb(),
-      ]);
 
+    // Fetch and sync each collection independently so a single failures doesn't cause a reset
+    try {
+      const resCourts = await getCourtsFromFb();
       if (Array.isArray(resCourts)) {
         setCourts(resCourts);
         localStorage.setItem('pb_courts', JSON.stringify(resCourts));
       }
+    } catch (err) {
+      console.warn('Could not sync courts from Firestore, using local copy:', err);
+      const savedCourts = localStorage.getItem('pb_courts');
+      if (savedCourts) {
+        try {
+          setCourts(JSON.parse(savedCourts));
+        } catch (_) {}
+      }
+    }
+
+    try {
+      const resBookings = await getBookingsFromFb();
       if (Array.isArray(resBookings)) {
         const sorted = [...resBookings].sort(
           (a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()
@@ -138,34 +146,47 @@ export default function App() {
         setBookings(sorted);
         localStorage.setItem('pb_bookings', JSON.stringify(sorted));
       }
-      if (resBank && resBank.bankName) {
-        setBankConfig(resBank);
-        localStorage.setItem('pb_bank_config', JSON.stringify(resBank));
-      }
-      if (resPwd) {
-        setAdminPassword(resPwd);
-        localStorage.setItem('pb_admin_password', resPwd);
-      }
     } catch (err) {
-      console.warn('Network syncing pending / offline:', err);
-      // Fallback load from local storage
-      try {
-        const savedCourts = localStorage.getItem('pb_courts');
-        if (savedCourts) setCourts(JSON.parse(savedCourts));
-        const savedBookings = localStorage.getItem('pb_bookings');
-        if (savedBookings) {
+      console.warn('Could not sync bookings from Firestore, using local copy:', err);
+      const savedBookings = localStorage.getItem('pb_bookings');
+      if (savedBookings) {
+        try {
           const parsed = JSON.parse(savedBookings);
           const sorted = [...parsed].sort(
             (a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()
           );
           setBookings(sorted);
-        }
-        const savedBank = localStorage.getItem('pb_bank_config');
-        if (savedBank) setBankConfig(JSON.parse(savedBank));
-        const savedPwd = localStorage.getItem('pb_admin_password');
-        if (savedPwd) setAdminPassword(savedPwd);
-      } catch (e) {
-        console.error(e);
+        } catch (_) {}
+      }
+    }
+
+    try {
+      const resBank = await getBankConfigFromFb();
+      if (resBank && resBank.bankName) {
+        setBankConfig(resBank);
+        localStorage.setItem('pb_bank_config', JSON.stringify(resBank));
+      }
+    } catch (err) {
+      console.warn('Could not sync bank config from Firestore, using local copy:', err);
+      const savedBank = localStorage.getItem('pb_bank_config');
+      if (savedBank) {
+        try {
+          setBankConfig(JSON.parse(savedBank));
+        } catch (_) {}
+      }
+    }
+
+    try {
+      const resPwd = await getAdminPasswordFromFb();
+      if (resPwd) {
+        setAdminPassword(resPwd);
+        localStorage.setItem('pb_admin_password', resPwd);
+      }
+    } catch (err) {
+      console.warn('Could not sync admin password from Firestore, using local copy:', err);
+      const savedPwd = localStorage.getItem('pb_admin_password');
+      if (savedPwd) {
+        setAdminPassword(savedPwd);
       }
     }
   };

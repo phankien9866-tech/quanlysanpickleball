@@ -104,7 +104,23 @@ export async function getCourtsFromFb(): Promise<Court[]> {
       return list.sort((a, b) => a.id.localeCompare(b.id));
     }
 
-    // Seed if empty
+    // Robust Seed Lock: Check metadata document to see if seeding already happened
+    const metaRef = doc(db, "config", "metadata");
+    let metaSnap;
+    try {
+      metaSnap = await getDoc(metaRef);
+    } catch (err) {
+      // If we can't read metadata, propagate the error instead of seeding blind
+      handleFirestoreError(err, OperationType.GET, "config/metadata");
+    }
+
+    const isSeeded = metaSnap.exists() && metaSnap.data().courts_seeded;
+    if (isSeeded) {
+      console.log("Courts collection is empty but was already seeded before. Keeping empty (user deleted all courts).");
+      return [];
+    }
+
+    // Seed if empty and never seeded
     console.log("Seeding courts to Firestore...");
     for (const court of INITIAL_COURTS) {
       try {
@@ -113,6 +129,15 @@ export async function getCourtsFromFb(): Promise<Court[]> {
         handleFirestoreError(err, OperationType.CREATE, `courts/${court.id}`);
       }
     }
+
+    // Update metadata
+    try {
+      const existingMeta = metaSnap.exists() ? metaSnap.data() : {};
+      await setDoc(metaRef, { ...existingMeta, courts_seeded: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "config/metadata");
+    }
+
     return INITIAL_COURTS;
   } catch (err) {
     console.error("Error reading courts from Firestore:", err);
@@ -163,7 +188,22 @@ export async function getBookingsFromFb(): Promise<Booking[]> {
       return list.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     }
 
-    // Seed if empty
+    // Robust Seed Lock: Check metadata document to see if seeding already happened
+    const metaRef = doc(db, "config", "metadata");
+    let metaSnap;
+    try {
+      metaSnap = await getDoc(metaRef);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.GET, "config/metadata");
+    }
+
+    const isSeeded = metaSnap.exists() && metaSnap.data().bookings_seeded;
+    if (isSeeded) {
+      console.log("Bookings collection is empty but was already seeded before. Keeping empty (user deleted all bookings).");
+      return [];
+    }
+
+    // Seed if empty and never seeded
     console.log("Seeding bookings to Firestore...");
     for (const b of INITIAL_BOOKINGS) {
       try {
@@ -172,6 +212,15 @@ export async function getBookingsFromFb(): Promise<Booking[]> {
         handleFirestoreError(err, OperationType.CREATE, `bookings/${b.id}`);
       }
     }
+
+    // Update metadata
+    try {
+      const existingMeta = metaSnap.exists() ? metaSnap.data() : {};
+      await setDoc(metaRef, { ...existingMeta, bookings_seeded: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "config/metadata");
+    }
+
     return INITIAL_BOOKINGS;
   } catch (err) {
     console.error("Error reading bookings from Firestore:", err);
@@ -206,6 +255,7 @@ export async function getBankConfigFromFb(): Promise<BankConfig> {
     if (docSnap.exists()) {
       return docSnap.data() as BankConfig;
     }
+
     // Seed if empty
     try {
       await setDoc(doc(db, "config", "bank"), defaultBank);
@@ -214,8 +264,8 @@ export async function getBankConfigFromFb(): Promise<BankConfig> {
     }
     return defaultBank;
   } catch (err) {
-    console.error("Error reading bank config from Firestore:", err);
-    return defaultBank;
+    console.error("Error reading bank config from Firestore, propagating error:", err);
+    throw err; // Propagate the error so calling components don't overwrite user's edits with defaults
   }
 }
 
@@ -241,6 +291,7 @@ export async function getAdminPasswordFromFb(): Promise<string> {
     if (docSnap.exists()) {
       return docSnap.data().password || defaultPassword;
     }
+
     // Seed if empty
     try {
       await setDoc(doc(db, "config", "admin"), { password: defaultPassword });
@@ -249,8 +300,8 @@ export async function getAdminPasswordFromFb(): Promise<string> {
     }
     return defaultPassword;
   } catch (err) {
-    console.error("Error reading admin password from Firestore:", err);
-    return defaultPassword;
+    console.error("Error reading admin password from Firestore, propagating error:", err);
+    throw err; // Propagate the error so calling components don't overwrite user's edits with defaults
   }
 }
 
