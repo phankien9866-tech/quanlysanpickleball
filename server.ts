@@ -3,17 +3,6 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { Court, Booking, BankConfig } from "./src/types";
-import {
-  fetchCourtsFromDb,
-  saveCourtToDb,
-  deleteCourtFromDb,
-  fetchBookingsFromDb,
-  saveBookingToDb,
-  fetchBankConfigFromDb,
-  saveBankConfigToDb,
-  fetchAdminPasswordFromDb,
-  saveAdminPasswordToDb
-} from "./src/db";
 
 const PORT = Number(process.env.PORT) || 3000;
 const DATA_FILE_PATH = path.join(process.cwd(), "data-store.json");
@@ -178,20 +167,6 @@ async function startServer() {
   loadDataFromFile();
   cachedAdminPassword = getAdminPassword();
 
-  // Load and upgrade to standard cloud persistent database (Firebase Firestore)
-  try {
-    state.courts = await fetchCourtsFromDb(state.courts);
-    state.bookings = await fetchBookingsFromDb(state.bookings);
-    state.bankConfig = await fetchBankConfigFromDb(state.bankConfig);
-    cachedAdminPassword = await fetchAdminPasswordFromDb(cachedAdminPassword);
-    saveAdminPassword(cachedAdminPassword); // Sync back to local file
-    // Write cloud data back to local storage as double-layered backup
-    saveDataToFile();
-    console.log("Database initialized successfully: Cloud persistence active and fully loaded.");
-  } catch (err) {
-    console.error("Database connection warning: falling back to high-capacity local disk persistence:", err);
-  }
-
   const app = express();
   app.use(express.json({ limit: "20mb" }));
   app.use(express.urlencoded({ limit: "20mb", extended: true }));
@@ -209,7 +184,6 @@ async function startServer() {
     }
     state.courts.push(newCourt);
     saveDataToFile();
-    saveCourtToDb(newCourt).catch(console.error);
     res.status(201).json(newCourt);
   });
 
@@ -218,7 +192,6 @@ async function startServer() {
     const updatedCourt: Court = req.body;
     state.courts = state.courts.map(c => c.id === updatedCourt.id ? updatedCourt : c);
     saveDataToFile();
-    saveCourtToDb(updatedCourt).catch(console.error);
     res.json(updatedCourt);
   });
 
@@ -228,10 +201,6 @@ async function startServer() {
     const { status } = req.body;
     state.courts = state.courts.map(c => c.id === id ? { ...c, status } : c);
     saveDataToFile();
-    const updated = state.courts.find(c => c.id === id);
-    if (updated) {
-      saveCourtToDb(updated).catch(console.error);
-    }
     res.json({ success: true, id, status });
   });
 
@@ -239,9 +208,7 @@ async function startServer() {
   app.delete("/api/courts/:id", (req, res) => {
     const { id } = req.params;
     state.courts = state.courts.filter(c => c.id !== id);
-    // Also cancel or flag bookings on this court if needed, or leave them
     saveDataToFile();
-    deleteCourtFromDb(id).catch(console.error);
     res.json({ success: true, id });
   });
 
@@ -262,7 +229,6 @@ async function startServer() {
         }
         state.bookings.push(b);
         addedBookings.push(b);
-        saveBookingToDb(b).catch(console.error);
       }
       saveDataToFile();
       res.status(201).json(addedBookings);
@@ -273,7 +239,6 @@ async function startServer() {
       }
       state.bookings.push(newBooking);
       saveDataToFile();
-      saveBookingToDb(newBooking).catch(console.error);
       res.status(201).json(newBooking);
     }
   });
@@ -284,10 +249,6 @@ async function startServer() {
     const { status } = req.body;
     state.bookings = state.bookings.map(b => b.id === id ? { ...b, status } : b);
     saveDataToFile();
-    const updated = state.bookings.find(b => b.id === id);
-    if (updated) {
-      saveBookingToDb(updated).catch(console.error);
-    }
     res.json({ success: true, id, status });
   });
 
@@ -299,12 +260,6 @@ async function startServer() {
     }
     state.bookings = state.bookings.map(b => bookingIds.includes(b.id) ? { ...b, status } : b);
     saveDataToFile();
-    bookingIds.forEach(id => {
-      const updated = state.bookings.find(b => b.id === id);
-      if (updated) {
-        saveBookingToDb(updated).catch(console.error);
-      }
-    });
     res.json({ success: true, count: bookingIds.length, status });
   });
 
@@ -317,7 +272,6 @@ async function startServer() {
   app.post("/api/bank-config", (req, res) => {
     state.bankConfig = req.body;
     saveDataToFile();
-    saveBankConfigToDb(state.bankConfig).catch(console.error);
     res.json(state.bankConfig);
   });
 
@@ -341,7 +295,6 @@ async function startServer() {
     const trimmed = password.trim();
     cachedAdminPassword = trimmed;
     saveAdminPassword(trimmed);
-    saveAdminPasswordToDb(trimmed).catch(console.error);
     res.json({ success: true, message: "Thay đổi mật khẩu thành công!" });
   });
 

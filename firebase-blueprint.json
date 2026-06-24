@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "Court": {
+      "title": "Court",
+      "description": "Pickleball court details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "type": "string" },
+        "image": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" }
+      },
+      "required": ["id", "name", "status"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Booking details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courtId": { "type": "string" },
+        "courtName": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "date": { "type": "string" },
+        "timeSlot": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "price": { "type": "number" }
+      },
+      "required": ["id", "courtId", "customerName", "customerPhone", "date", "timeSlot", "status"]
+    },
+    "BankConfig": {
+      "title": "BankConfig",
+      "description": "Bank transfer and QR configuration",
+      "type": "object",
+      "properties": {
+        "bankName": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "accountOwner": { "type": "string" },
+        "qrCodeUrl": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/courts/{courtId}": {
+      "schema": "Court",
+      "description": "Collection of pickleball courts"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Collection of court bookings"
+    },
+    "/config/{configId}": {
+      "schema": "object",
+      "description": "Database configuration documents including bank config and admin password"
+    }
+  }
+}

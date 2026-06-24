@@ -6,6 +6,18 @@ import { Court, Booking, BankConfig } from './types';
 import { INITIAL_COURTS, INITIAL_BOOKINGS } from './data';
 import { Info, Sparkles, MessageCircle, Lock, Shield, X, Eye, EyeOff, Key, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import {
+  getCourtsFromFb,
+  addCourtToFb,
+  updateCourtToFb,
+  deleteCourtFromFb,
+  getBookingsFromFb,
+  saveBookingToFb,
+  getBankConfigFromFb,
+  saveBankConfigToFb,
+  getAdminPasswordFromFb,
+  saveAdminPasswordToFb
+} from './firebaseClient';
 
 export default function App() {
   // 1. Role State: "customer" (Người chơi) vs "admin" (Chủ sân)
@@ -91,10 +103,11 @@ export default function App() {
   // Synchronize dynamic lists with local storage & server database
   const fetchAllData = async () => {
     try {
-      const [resCourts, resBookings, resBank] = await Promise.all([
-        fetch('/api/courts').then(r => r.json()),
-        fetch('/api/bookings').then(r => r.json()),
-        fetch('/api/bank-config').then(r => r.json()),
+      const [resCourts, resBookings, resBank, resPwd] = await Promise.all([
+        getCourtsFromFb(),
+        getBookingsFromFb(),
+        getBankConfigFromFb(),
+        getAdminPasswordFromFb(),
       ]);
 
       if (Array.isArray(resCourts)) {
@@ -112,6 +125,10 @@ export default function App() {
         setBankConfig(resBank);
         localStorage.setItem('pb_bank_config', JSON.stringify(resBank));
       }
+      if (resPwd) {
+        setAdminPassword(resPwd);
+        localStorage.setItem('pb_admin_password', resPwd);
+      }
     } catch (err) {
       console.warn('Network syncing pending / offline:', err);
       // Fallback load from local storage
@@ -128,6 +145,8 @@ export default function App() {
         }
         const savedBank = localStorage.getItem('pb_bank_config');
         if (savedBank) setBankConfig(JSON.parse(savedBank));
+        const savedPwd = localStorage.getItem('pb_admin_password');
+        if (savedPwd) setAdminPassword(savedPwd);
       } catch (e) {
         console.error(e);
       }
@@ -167,13 +186,8 @@ export default function App() {
   const handleVerifyPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch('/api/admin/verify-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: passwordInput }),
-      });
-      const data = await response.json();
-      if (response.ok && data.success) {
+      const currentPwd = adminPassword || '0911370429';
+      if (passwordInput === currentPwd) {
         setIsAdminAuthenticated(true);
         try {
           sessionStorage.setItem('pb_admin_auth', 'true');
@@ -186,11 +200,11 @@ export default function App() {
         setPasswordError('Mật khẩu của chủ sân không chính xác. Hãy vui lòng thử lại!');
       }
     } catch (err) {
-      setPasswordError('Lỗi kết nối máy chủ, vui lòng thử lại!');
+      setPasswordError('Có lỗi xảy ra, vui lòng thử lại!');
     }
   };
 
-  // 3. Customer Operations with instant localStorage update + async server POST
+  // 3. Customer Operations with instant localStorage update + Firebase Web SDK sync
   const handleAddBooking = async (newBooking: Booking | Booking[]) => {
     const bookingsToAdd = Array.isArray(newBooking) ? newBooking : [newBooking];
 
@@ -208,16 +222,12 @@ export default function App() {
     });
 
     try {
-      const response = await fetch('/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newBooking),
-      });
-      if (response.ok) {
-        fetchAllData();
+      for (const booking of bookingsToAdd) {
+        await saveBookingToFb(booking);
       }
+      fetchAllData();
     } catch (e) {
-      console.error('Error sending booking:', e);
+      console.error('Error saving booking to Firestore:', e);
     }
   };
 
@@ -226,32 +236,24 @@ export default function App() {
     if (ids.length === 0) return;
 
     // Optimistic UI update
+    let updatedBookings: Booking[] = [];
     setBookings(prev => {
       const updated = prev.map(b => ids.includes(b.id) ? { ...b, status: 'canceled' as const } : b);
+      updatedBookings = updated;
       localStorage.setItem('pb_bookings', JSON.stringify(updated));
       return updated;
     });
 
     try {
-      let response;
-      if (Array.isArray(bookingId)) {
-        response = await fetch(`/api/bookings/bulk/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookingIds: ids, status: 'canceled' }),
-        });
-      } else {
-        response = await fetch(`/api/bookings/${bookingId}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'canceled' }),
-        });
+      for (const id of ids) {
+        const found = updatedBookings.find(b => b.id === id);
+        if (found) {
+          await saveBookingToFb(found);
+        }
       }
-      if (response.ok) {
-        fetchAllData();
-      }
+      fetchAllData();
     } catch (e) {
-      console.error('Error changing booking status:', e);
+      console.error('Error cancelling booking in Firestore:', e);
     }
   };
 
@@ -261,32 +263,24 @@ export default function App() {
     if (ids.length === 0) return;
 
     // Optimistic UI update
+    let updatedBookings: Booking[] = [];
     setBookings(prev => {
       const updated = prev.map(b => ids.includes(b.id) ? { ...b, status: 'confirmed' as const } : b);
+      updatedBookings = updated;
       localStorage.setItem('pb_bookings', JSON.stringify(updated));
       return updated;
     });
 
     try {
-      let response;
-      if (Array.isArray(bookingId)) {
-        response = await fetch(`/api/bookings/bulk/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookingIds: ids, status: 'confirmed' }),
-        });
-      } else {
-        response = await fetch(`/api/bookings/${bookingId}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'confirmed' }),
-        });
+      for (const id of ids) {
+        const found = updatedBookings.find(b => b.id === id);
+        if (found) {
+          await saveBookingToFb(found);
+        }
       }
-      if (response.ok) {
-        fetchAllData();
-      }
+      fetchAllData();
     } catch (e) {
-      console.error(e);
+      console.error('Error confirming booking in Firestore:', e);
     }
   };
 
@@ -295,32 +289,24 @@ export default function App() {
     if (ids.length === 0) return;
 
     // Optimistic UI update
+    let updatedBookings: Booking[] = [];
     setBookings(prev => {
       const updated = prev.map(b => ids.includes(b.id) ? { ...b, status: 'canceled' as const } : b);
+      updatedBookings = updated;
       localStorage.setItem('pb_bookings', JSON.stringify(updated));
       return updated;
     });
 
     try {
-      let response;
-      if (Array.isArray(bookingId)) {
-        response = await fetch(`/api/bookings/bulk/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookingIds: ids, status: 'canceled' }),
-        });
-      } else {
-        response = await fetch(`/api/bookings/${bookingId}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'canceled' }),
-        });
+      for (const id of ids) {
+        const found = updatedBookings.find(b => b.id === id);
+        if (found) {
+          await saveBookingToFb(found);
+        }
       }
-      if (response.ok) {
-        fetchAllData();
-      }
+      fetchAllData();
     } catch (e) {
-      console.error(e);
+      console.error('Error rejecting booking in Firestore:', e);
     }
   };
 
@@ -338,16 +324,10 @@ export default function App() {
     });
 
     try {
-      const response = await fetch('/api/courts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(courtWithId),
-      });
-      if (response.ok) {
-        fetchAllData();
-      }
+      await addCourtToFb(courtWithId);
+      fetchAllData();
     } catch (e) {
-      console.error(e);
+      console.error('Error adding court to Firestore:', e);
     }
   };
 
@@ -360,38 +340,31 @@ export default function App() {
     });
 
     try {
-      const response = await fetch('/api/courts', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedCourt),
-      });
-      if (response.ok) {
-        fetchAllData();
-      }
+      await updateCourtToFb(updatedCourt);
+      fetchAllData();
     } catch (e) {
-      console.error(e);
+      console.error('Error updating court in Firestore:', e);
     }
   };
 
   const handleUpdateCourtStatus = async (id: string, status: 'active' | 'maintenance' | 'inactive') => {
     // Optimistic UI update
+    let updatedCourts: Court[] = [];
     setCourts(prev => {
       const updated = prev.map(c => c.id === id ? { ...c, status } : c);
+      updatedCourts = updated;
       localStorage.setItem('pb_courts', JSON.stringify(updated));
       return updated;
     });
 
     try {
-      const response = await fetch(`/api/courts/${id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      });
-      if (response.ok) {
-        fetchAllData();
+      const found = updatedCourts.find(c => c.id === id);
+      if (found) {
+        await updateCourtToFb(found);
       }
+      fetchAllData();
     } catch (e) {
-      console.error(e);
+      console.error('Error updating court status in Firestore:', e);
     }
   };
 
@@ -404,14 +377,10 @@ export default function App() {
     });
 
     try {
-      const response = await fetch(`/api/courts/${id}`, {
-        method: 'DELETE',
-      });
-      if (response.ok) {
-        fetchAllData();
-      }
+      await deleteCourtFromFb(id);
+      fetchAllData();
     } catch (e) {
-      console.error(e);
+      console.error('Error deleting court from Firestore:', e);
     }
   };
 
@@ -420,16 +389,10 @@ export default function App() {
     localStorage.setItem('pb_bank_config', JSON.stringify(config));
 
     try {
-      const response = await fetch('/api/bank-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-      if (response.ok) {
-        fetchAllData();
-      }
+      await saveBankConfigToFb(config);
+      fetchAllData();
     } catch (e) {
-      console.error(e);
+      console.error('Error saving bank config to Firestore:', e);
     }
   };
 
@@ -438,16 +401,10 @@ export default function App() {
     localStorage.setItem('pb_admin_password', newPassword);
 
     try {
-      const response = await fetch('/api/admin/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: newPassword.trim() }),
-      });
-      if (response.ok) {
-        fetchAllData();
-      }
+      await saveAdminPasswordToFb(newPassword.trim());
+      fetchAllData();
     } catch (e) {
-      console.error(e);
+      console.error('Error saving admin password to Firestore:', e);
     }
   };
 
