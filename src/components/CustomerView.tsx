@@ -8,13 +8,13 @@ import {
   Clock, 
   CheckCircle, 
   ChevronRight, 
+  ChevronDown, 
   X, 
   Phone, 
   User, 
   FileText, 
   CreditCard, 
   Calendar as CalendarIcon,
-  Star,
   Layers,
   Sun,
   ShieldCheck,
@@ -28,7 +28,7 @@ interface CustomerViewProps {
   bookings: Booking[];
   onAddBooking: (booking: Booking | Booking[]) => void;
   myBookedIds: string[];
-  cancelBooking: (bookingId: string) => void;
+  cancelBooking: (bookingId: string | string[]) => void;
   showMyBookingsModal: boolean;
   setShowMyBookingsModal: (show: boolean) => void;
   bankConfig: BankConfig;
@@ -49,7 +49,7 @@ export default function CustomerView({
   const [courtType, setCourtType] = useState<'all' | 'indoor' | 'outdoor'>('all');
   const [hasRoof, setHasRoof] = useState(false);
   const [hasLights, setHasLights] = useState(false);
-  const [selectedSort, setSelectedSort] = useState<'rating' | 'priceAsc' | 'priceDesc'>('rating');
+  const [selectedSort, setSelectedSort] = useState<'priceAsc' | 'priceDesc'>('priceAsc');
 
   // Booking Modal State
   const [selectedCourt, setSelectedCourt] = useState<Court | null>(null);
@@ -267,7 +267,6 @@ export default function CustomerView({
         return matchesSearch && matchesType && matchesRoof && matchesLights;
       })
       .sort((a, b) => {
-        if (selectedSort === 'rating') return b.rating - a.rating;
         if (selectedSort === 'priceAsc') return a.priceDaytime - b.priceDaytime;
         if (selectedSort === 'priceDesc') return b.priceDaytime - a.priceDaytime;
         return 0;
@@ -412,6 +411,89 @@ export default function CustomerView({
     return bookings.filter(b => myBookedIds.includes(b.id));
   }, [bookings, myBookedIds]);
 
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+
+  interface CustomerBookingGroup {
+    id: string;
+    isGroup: boolean;
+    bookings: Booking[];
+    courtName: string;
+    courtId: string;
+    totalPrice: number;
+    createdAt: string;
+    status: 'pending' | 'confirmed' | 'canceled';
+    notes?: string;
+    timeSlot: string;
+    date: string;
+  }
+
+  // Convert myBookingsList into display groups (Lịch cố định)
+  const myBookingsGrouped = useMemo(() => {
+    const groups: { [key: string]: CustomerBookingGroup } = {};
+    const singles: CustomerBookingGroup[] = [];
+
+    myBookingsList.forEach((b) => {
+      if (b.bookingGroupId && b.rentalType === 'monthly') {
+        if (!groups[b.bookingGroupId]) {
+          groups[b.bookingGroupId] = {
+            id: b.bookingGroupId,
+            isGroup: true,
+            bookings: [],
+            courtName: b.courtName,
+            courtId: b.courtId,
+            totalPrice: 0,
+            createdAt: b.createdAt || '',
+            status: b.status,
+            notes: b.notes,
+            timeSlot: b.timeSlot,
+            date: b.date
+          };
+        }
+        groups[b.bookingGroupId].bookings.push(b);
+        groups[b.bookingGroupId].totalPrice += b.totalPrice;
+        
+        if (b.notes && !groups[b.bookingGroupId].notes) {
+          groups[b.bookingGroupId].notes = b.notes;
+        }
+
+        // Consolidate status
+        const groupBookings = groups[b.bookingGroupId].bookings;
+        const hasPending = groupBookings.some(cb => cb.status === 'pending');
+        const hasConfirmed = groupBookings.some(cb => cb.status === 'confirmed');
+        if (hasPending) {
+          groups[b.bookingGroupId].status = 'pending';
+        } else if (hasConfirmed) {
+          groups[b.bookingGroupId].status = 'confirmed';
+        } else {
+          groups[b.bookingGroupId].status = 'canceled';
+        }
+      } else {
+        singles.push({
+          id: b.id,
+          isGroup: false,
+          bookings: [b],
+          courtName: b.courtName,
+          courtId: b.courtId,
+          totalPrice: b.totalPrice,
+          createdAt: b.createdAt || '',
+          status: b.status,
+          notes: b.notes,
+          timeSlot: b.timeSlot,
+          date: b.date
+        });
+      }
+    });
+
+    const combined = [...Object.values(groups), ...singles];
+    return combined.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }, [myBookingsList]);
+
+  const toggleGroupExpand = (groupId: string) => {
+    setExpandedGroups(prev =>
+      prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId]
+    );
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       
@@ -528,7 +610,6 @@ export default function CustomerView({
               onChange={(e) => setSelectedSort(e.target.value as any)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-lime-400/50 transition-all"
             >
-              <option value="rating">Được đánh giá cao nhất</option>
               <option value="priceAsc">Giá ban ngày: Thấp đến Cao</option>
               <option value="priceDesc">Giá ban ngày: Cao đến Thấp</option>
             </select>
@@ -579,10 +660,6 @@ export default function CustomerView({
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
-                    <div className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-md px-2.5 py-1 rounded-lg text-white font-bold text-xs flex items-center space-x-1">
-                      <Star className="w-3.5 h-3.5 text-lime-400 fill-lime-400" />
-                      <span>{court.rating}</span>
-                    </div>
 
                     <div className="absolute top-3 right-3 flex space-x-1.5">
                       <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-md ${
@@ -677,16 +754,8 @@ export default function CustomerView({
             >
               
               {/* Left Column: Court Info & Highlights */}
-              <div className="md:w-5/12 bg-slate-950 text-white p-6 sm:p-8 flex flex-col justify-between relative overflow-y-auto border-r border-slate-800/80">
+              <div className="md:w-4/12 bg-slate-950 text-white p-6 sm:p-8 flex flex-col justify-between relative overflow-y-auto border-r border-slate-800/80">
                 <div className="space-y-4">
-                  <div className="relative h-40 rounded-2xl overflow-hidden border border-slate-800">
-                    <img 
-                      src={selectedCourt.image} 
-                      alt={selectedCourt.name}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
                   
                   <div>
                     <span className="inline-block bg-lime-400 text-slate-900 text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-lg mb-2">
@@ -742,7 +811,7 @@ export default function CustomerView({
               </div>
 
               {/* Right Column: Checkout Interactive Steps Form */}
-              <div className="md:w-7/12 p-6 sm:p-8 flex flex-col overflow-y-auto max-h-[90vh] sm:max-h-none bg-white">
+              <div className="md:w-8/12 p-6 sm:p-8 flex flex-col overflow-y-auto max-h-[90vh] sm:max-h-none bg-white">
                 <button 
                   onClick={handleCloseBooking}
                   className="absolute top-4 right-4 text-slate-400 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 p-1.5 rounded-full z-10 transition-colors"
@@ -1430,7 +1499,7 @@ export default function CustomerView({
 
               {/* Booking Cards scroll list */}
               <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-                {myBookingsList.length === 0 ? (
+                {myBookingsGrouped.length === 0 ? (
                   <div className="text-center py-12 space-y-3">
                     <p className="text-slate-400 text-sm">Bạn chưa thực hiện giao dịch đặt sân nào trên trình duyệt này.</p>
                     <button
@@ -1441,33 +1510,45 @@ export default function CustomerView({
                     </button>
                   </div>
                 ) : (
-                  myBookingsList.map((booking) => (
+                  myBookingsGrouped.map((group) => (
                     <div 
-                      key={booking.id}
-                      className="border border-slate-200 rounded-2xl p-4 hover:border-slate-300 transition-all space-y-3"
+                      key={group.id}
+                      className="border border-slate-200 rounded-2xl p-4 hover:border-slate-300 transition-all space-y-3 bg-white shadow-sm"
                     >
                       <div className="flex items-start justify-between">
                         <div>
-                          <h4 className="font-extrabold text-slate-900 text-sm sm:text-base">{booking.courtName}</h4>
-                          <div className="flex flex-wrap gap-2 text-xs text-slate-500 mt-1">
+                          <h4 className="font-extrabold text-slate-900 text-sm sm:text-base flex items-center gap-1.5">
+                            {group.courtName}
+                            {group.isGroup && (
+                              <span className="bg-lime-100 text-lime-900 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                Cố định tháng
+                              </span>
+                            )}
+                          </h4>
+                          <div className="flex flex-wrap gap-2 text-xs text-slate-500 mt-1.5">
                             <span className="bg-slate-100 px-2 py-0.5 rounded font-medium border border-slate-200/50">
-                              📅 {VietnameseFormatDate(booking.date)}
+                              📅 {group.isGroup ? `Bắt đầu từ ${VietnameseFormatDate(group.date)}` : VietnameseFormatDate(group.date)}
                             </span>
                             <span className="bg-slate-100 px-2 py-0.5 rounded font-semibold text-slate-800 border border-slate-200/50">
-                              🕒 {booking.timeSlot}
+                              🕒 {group.timeSlot}
                             </span>
+                            {group.isGroup && (
+                              <span className="bg-slate-100 px-2 py-0.5 rounded font-bold text-slate-800 border border-slate-200/50">
+                                🔢 {group.bookings.length} buổi
+                              </span>
+                            )}
                           </div>
                         </div>
                         
                         <div>
                           <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                            booking.status === 'confirmed'
+                            group.status === 'confirmed'
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : booking.status === 'canceled'
+                              : group.status === 'canceled'
                                 ? 'bg-rose-100 text-rose-800 border border-rose-200'
                                 : 'bg-amber-100 text-amber-800 border border-amber-200'
                           }`}>
-                            {booking.status === 'confirmed' ? 'Đã duyệt' : booking.status === 'canceled' ? 'Đã hủy' : 'Đang duyệt'}
+                            {group.status === 'confirmed' ? 'Đã duyệt' : group.status === 'canceled' ? 'Đã hủy' : 'Đang duyệt'}
                           </span>
                         </div>
                       </div>
@@ -1477,29 +1558,75 @@ export default function CustomerView({
                         <div>
                           <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Thông tin thanh toán</p>
                           <p className="font-extrabold text-slate-900">
-                            {booking.totalPrice.toLocaleString('vi-VN')} VNĐ
+                            {group.totalPrice.toLocaleString('vi-VN')} VNĐ
                           </p>
                         </div>
-                        {booking.notes && (
+                        {group.notes && (
                           <div className="text-left border-l border-slate-200 pl-3">
                             <p className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Ghi chú</p>
-                            <p className="text-slate-700 italic max-w-xs truncate font-medium">"{booking.notes}"</p>
+                            <p className="text-slate-700 italic max-w-xs truncate font-medium">"{group.notes}"</p>
                           </div>
                         )}
                       </div>
 
-                      {/* Cancel Booking Action if and only if not already canceled */}
-                      {booking.status !== 'canceled' && (
+                      {/* Collapsible details for groups */}
+                      {group.isGroup && (
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            onClick={() => toggleGroupExpand(group.id)}
+                            className="flex items-center space-x-1 text-xs text-slate-500 hover:text-slate-800 font-bold transition-colors cursor-pointer"
+                          >
+                            <span>{expandedGroups.includes(group.id) ? 'Thu gọn chi tiết' : `Xem chi tiết ${group.bookings.length} ngày`}</span>
+                            {expandedGroups.includes(group.id) ? (
+                              <ChevronDown className="w-3.5 h-3.5 rotate-180 transition-transform" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5 transition-transform" />
+                            )}
+                          </button>
+
+                          {expandedGroups.includes(group.id) && (
+                            <div className="mt-2.5 pt-2.5 border-t border-slate-100 space-y-1.5">
+                              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Chi tiết lịch từng buổi:</p>
+                              <div className="grid grid-cols-2 gap-1.5 max-h-32 overflow-y-auto">
+                                {group.bookings.map((cb) => (
+                                  <div key={cb.id} className="bg-slate-50 p-2 rounded-lg border border-slate-200/40 flex items-center justify-between text-xs">
+                                    <span className="font-medium text-slate-700">{VietnameseFormatDate(cb.date)} ({getVietnameseDayOfWeek(cb.date)})</span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                      cb.status === 'confirmed'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : cb.status === 'canceled'
+                                          ? 'bg-rose-100 text-rose-800'
+                                          : 'bg-amber-100 text-amber-800'
+                                    }`}>
+                                      {cb.status === 'confirmed' ? 'Duyệt' : cb.status === 'canceled' ? 'Hủy' : 'Chờ'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Cancel Booking Action if and only if not already completely canceled */}
+                      {group.status !== 'canceled' && (
                         <div className="flex justify-end pt-1">
                           <button
                             onClick={() => {
-                              if (window.confirm('Bạn có chắc chắn muốn hủy yêu cầu đặt sân này không?')) {
-                                cancelBooking(booking.id);
+                              if (group.isGroup) {
+                                if (window.confirm('Bạn có chắc chắn muốn hủy toàn bộ gói đặt sân cố định này không?')) {
+                                  cancelBooking(group.bookings.map(b => b.id));
+                                }
+                              } else {
+                                if (window.confirm('Bạn có chắc chắn muốn hủy yêu cầu đặt sân này không?')) {
+                                  cancelBooking(group.id);
+                                }
                               }
                             }}
                             className="text-xs text-rose-600 hover:text-rose-700 font-bold hover:underline cursor-pointer"
                           >
-                            Yêu cầu hủy lịch sân
+                            {group.isGroup ? 'Yêu cầu hủy toàn bộ gói' : 'Yêu cầu hủy lịch sân'}
                           </button>
                         </div>
                       )}

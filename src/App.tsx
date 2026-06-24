@@ -153,18 +153,30 @@ export default function App() {
     }
   };
 
-  const handleCancelBooking = async (bookingId: string) => {
+  const handleCancelBooking = async (bookingId: string | string[]) => {
+    const ids = Array.isArray(bookingId) ? bookingId : [bookingId];
+    if (ids.length === 0) return;
+
     // Optimistic local update
     setBookings(prev =>
-      prev.map(b => b.id === bookingId ? { ...b, status: 'canceled' } : b)
+      prev.map(b => ids.includes(b.id) ? { ...b, status: 'canceled' as const } : b)
     );
 
     try {
-      const response = await fetch(`/api/bookings/${bookingId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'canceled' }),
-      });
+      let response;
+      if (Array.isArray(bookingId)) {
+        response = await fetch(`/api/bookings/bulk/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bookingIds: ids, status: 'canceled' }),
+        });
+      } else {
+        response = await fetch(`/api/bookings/${bookingId}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'canceled' }),
+        });
+      }
       if (response.ok) {
         fetchAllData();
       }
@@ -336,7 +348,7 @@ export default function App() {
       <Navbar
         currentRole={role}
         setRole={handleRoleChange}
-        myBookingsCount={myBookedIds.length}
+        myBookingsCount={bookings.filter(b => myBookedIds.includes(b.id)).length}
         openMyBookings={() => setShowMyBookingsModal(true)}
       />
 
