@@ -1,13 +1,37 @@
 import fs from "fs";
 import path from "path";
 import { Court, Booking, BankConfig } from "./types";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs } from "firebase/firestore";
 
 // Absolute paths to local database files in the /src directory
 const COURTS_FILE = path.join(process.cwd(), "src", "courts.json");
 const BOOKINGS_FILE = path.join(process.cwd(), "src", "bookings.json");
 const BANK_FILE = path.join(process.cwd(), "src", "bank-config.json");
 
-// Helper to safely write JSON
+// Load Firebase configuration
+const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
+let firebaseConfig: any = null;
+if (fs.existsSync(firebaseConfigPath)) {
+  try {
+    firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf-8"));
+  } catch (e) {
+    console.error("Failed to read firebase config in server:", e);
+  }
+}
+
+let db: any = null;
+if (firebaseConfig && firebaseConfig.apiKey) {
+  try {
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    console.log("Firebase Firestore client initialized successfully in server/db.");
+  } catch (err) {
+    console.error("Failed to initialize Firebase Firestore:", err);
+  }
+}
+
+// Helper to safely write local JSON
 function writeJsonFile(filePath: string, data: any) {
   try {
     const dir = path.dirname(filePath);
@@ -20,7 +44,7 @@ function writeJsonFile(filePath: string, data: any) {
   }
 }
 
-// Helper to safely read JSON
+// Helper to safely read local JSON
 function readJsonFile<T>(filePath: string): T | null {
   try {
     if (fs.existsSync(filePath)) {
@@ -34,12 +58,36 @@ function readJsonFile<T>(filePath: string): T | null {
 }
 
 export async function fetchCourtsFromDb(defaultCourts: Court[]): Promise<Court[]> {
+  // Try cloud first
+  if (db) {
+    try {
+      const snapshot = await getDocs(collection(db, "courts"));
+      const list: Court[] = [];
+      snapshot.forEach((doc) => {
+        list.push({ ...doc.data(), id: doc.id } as Court);
+      });
+      if (list.length > 0) {
+        const sorted = list.sort((a, b) => a.id.localeCompare(b.id));
+        writeJsonFile(COURTS_FILE, sorted); // Sync local cache
+        return sorted;
+      }
+      // If empty in cloud, seed with default courts
+      for (const court of defaultCourts) {
+        await setDoc(doc(db, "courts", court.id), court);
+      }
+      writeJsonFile(COURTS_FILE, defaultCourts);
+      return defaultCourts;
+    } catch (err) {
+      console.error("Firestore fetchCourts failed, falling back to local file:", err);
+    }
+  }
+
+  // Fallback to local file
   try {
     const list = readJsonFile<Court[]>(COURTS_FILE);
     if (list && list.length > 0) {
       return list.sort((a, b) => a.id.localeCompare(b.id));
     }
-    // Seed and write default
     writeJsonFile(COURTS_FILE, defaultCourts);
     return defaultCourts;
   } catch (err) {
@@ -49,6 +97,16 @@ export async function fetchCourtsFromDb(defaultCourts: Court[]): Promise<Court[]
 }
 
 export async function saveCourtToDb(court: Court): Promise<void> {
+  // Save to cloud
+  if (db) {
+    try {
+      await setDoc(doc(db, "courts", court.id), court);
+    } catch (err) {
+      console.error("Firestore saveCourt failed:", err);
+    }
+  }
+
+  // Save to local cache
   try {
     const list = readJsonFile<Court[]>(COURTS_FILE) || [];
     const index = list.findIndex(c => c.id === court.id);
@@ -64,6 +122,16 @@ export async function saveCourtToDb(court: Court): Promise<void> {
 }
 
 export async function deleteCourtFromDb(id: string): Promise<void> {
+  // Delete from cloud
+  if (db) {
+    try {
+      await deleteDoc(doc(db, "courts", id));
+    } catch (err) {
+      console.error("Firestore deleteCourt failed:", err);
+    }
+  }
+
+  // Delete from local cache
   try {
     let list = readJsonFile<Court[]>(COURTS_FILE) || [];
     list = list.filter(c => c.id !== id);
@@ -74,12 +142,36 @@ export async function deleteCourtFromDb(id: string): Promise<void> {
 }
 
 export async function fetchBookingsFromDb(defaultBookings: Booking[]): Promise<Booking[]> {
+  // Try cloud first
+  if (db) {
+    try {
+      const snapshot = await getDocs(collection(db, "bookings"));
+      const list: Booking[] = [];
+      snapshot.forEach((doc) => {
+        list.push({ ...doc.data(), id: doc.id } as Booking);
+      });
+      if (list.length > 0) {
+        const sorted = list.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+        writeJsonFile(BOOKINGS_FILE, sorted); // Sync local cache
+        return sorted;
+      }
+      // If empty in cloud, seed with defaults
+      for (const b of defaultBookings) {
+        await setDoc(doc(db, "bookings", b.id), b);
+      }
+      writeJsonFile(BOOKINGS_FILE, defaultBookings);
+      return defaultBookings;
+    } catch (err) {
+      console.error("Firestore fetchBookings failed, falling back to local file:", err);
+    }
+  }
+
+  // Fallback to local file
   try {
     const list = readJsonFile<Booking[]>(BOOKINGS_FILE);
     if (list && list.length > 0) {
       return list.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     }
-    // Seed and write default
     writeJsonFile(BOOKINGS_FILE, defaultBookings);
     return defaultBookings;
   } catch (err) {
@@ -89,6 +181,16 @@ export async function fetchBookingsFromDb(defaultBookings: Booking[]): Promise<B
 }
 
 export async function saveBookingToDb(booking: Booking): Promise<void> {
+  // Save to cloud
+  if (db) {
+    try {
+      await setDoc(doc(db, "bookings", booking.id), booking);
+    } catch (err) {
+      console.error("Firestore saveBooking failed:", err);
+    }
+  }
+
+  // Save to local cache
   try {
     const list = readJsonFile<Booking[]>(BOOKINGS_FILE) || [];
     const index = list.findIndex(b => b.id === booking.id);
@@ -104,12 +206,30 @@ export async function saveBookingToDb(booking: Booking): Promise<void> {
 }
 
 export async function fetchBankConfigFromDb(defaultBank: BankConfig): Promise<BankConfig> {
+  // Try cloud first
+  if (db) {
+    try {
+      const d = await getDoc(doc(db, "config", "bank"));
+      if (d.exists()) {
+        const config = d.data() as BankConfig;
+        writeJsonFile(BANK_FILE, config); // Sync local cache
+        return config;
+      }
+      // Seed if empty
+      await setDoc(doc(db, "config", "bank"), defaultBank);
+      writeJsonFile(BANK_FILE, defaultBank);
+      return defaultBank;
+    } catch (err) {
+      console.error("Firestore fetchBankConfig failed, falling back to local file:", err);
+    }
+  }
+
+  // Fallback to local file
   try {
     const config = readJsonFile<BankConfig>(BANK_FILE);
     if (config) {
       return config;
     }
-    // Seed default
     writeJsonFile(BANK_FILE, defaultBank);
     return defaultBank;
   } catch (err) {
@@ -119,9 +239,45 @@ export async function fetchBankConfigFromDb(defaultBank: BankConfig): Promise<Ba
 }
 
 export async function saveBankConfigToDb(bankConfig: BankConfig): Promise<void> {
+  // Save to cloud
+  if (db) {
+    try {
+      await setDoc(doc(db, "config", "bank"), bankConfig);
+    } catch (err) {
+      console.error("Firestore saveBankConfig failed:", err);
+    }
+  }
+
+  // Save to local cache
   try {
     writeJsonFile(BANK_FILE, bankConfig);
   } catch (err) {
     console.error("Local DB saveBankConfig failed:", err);
+  }
+}
+
+export async function fetchAdminPasswordFromDb(defaultPassword: string): Promise<string> {
+  if (db) {
+    try {
+      const d = await getDoc(doc(db, "config", "admin"));
+      if (d.exists()) {
+        return (d.data() as any).password || defaultPassword;
+      }
+      await setDoc(doc(db, "config", "admin"), { password: defaultPassword });
+      return defaultPassword;
+    } catch (err) {
+      console.error("Firestore fetchAdminPassword failed, using default:", err);
+    }
+  }
+  return defaultPassword;
+}
+
+export async function saveAdminPasswordToDb(password: string): Promise<void> {
+  if (db) {
+    try {
+      await setDoc(doc(db, "config", "admin"), { password });
+    } catch (err) {
+      console.error("Firestore saveAdminPassword failed:", err);
+    }
   }
 }

@@ -35,8 +35,8 @@ import { motion, AnimatePresence } from 'motion/react';
 interface AdminViewProps {
   courts: Court[];
   bookings: Booking[];
-  onConfirmBooking: (bookingId: string) => void;
-  onRejectBooking: (bookingId: string) => void;
+  onConfirmBooking: (bookingId: string | string[]) => void;
+  onRejectBooking: (bookingId: string | string[]) => void;
   onAddCourt: (court: Court) => void;
   onUpdateCourt: (court: Court) => void;
   onUpdateCourtStatus: (id: string, status: 'active' | 'maintenance' | 'inactive') => void;
@@ -315,6 +315,120 @@ export default function AdminView({
   const [bookingFilterCourt, setBookingFilterCourt] = useState<'all' | string>('all');
   const [bookingFilterDate, setBookingFilterDate] = useState<string>('');
 
+  // Group-by state for expanding monthly bookings
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+
+  interface BookingGroup {
+    id: string;
+    isGroup: boolean;
+    bookings: Booking[];
+    customerName: string;
+    customerPhone: string;
+    courtName: string;
+    courtId: string;
+    totalPrice: number;
+    createdAt: string;
+    status: 'pending' | 'confirmed' | 'canceled';
+    paymentMethod: 'at_court' | 'bank_transfer';
+    notes?: string;
+    useLights?: boolean;
+    rentalType?: 'casual' | 'monthly';
+    rentRackets?: boolean;
+    rentBalls?: boolean;
+    monthsCount?: number;
+  }
+
+  // Filter Bookings list for display
+  const filteredBookings = useMemo(() => {
+    return bookings.filter(b => {
+      const matchStatus = bookingFilterStatus === 'all' || b.status === bookingFilterStatus;
+      const matchCourt = bookingFilterCourt === 'all' || b.courtId === bookingFilterCourt;
+      const matchDate = !bookingFilterDate || b.date === bookingFilterDate;
+      return matchStatus && matchCourt && matchDate;
+    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [bookings, bookingFilterStatus, bookingFilterCourt, bookingFilterDate]);
+
+  // Convert filteredBookings into display groups
+  const groupedBookings = useMemo(() => {
+    const groups: { [key: string]: BookingGroup } = {};
+    const singles: BookingGroup[] = [];
+
+    filteredBookings.forEach((b) => {
+      if (b.bookingGroupId && b.rentalType === 'monthly') {
+        if (!groups[b.bookingGroupId]) {
+          groups[b.bookingGroupId] = {
+            id: b.bookingGroupId,
+            isGroup: true,
+            bookings: [],
+            customerName: b.customerName,
+            customerPhone: b.customerPhone,
+            courtName: b.courtName,
+            courtId: b.courtId,
+            totalPrice: 0,
+            createdAt: b.createdAt,
+            status: b.status,
+            paymentMethod: b.paymentMethod,
+            notes: b.notes,
+            useLights: b.useLights,
+            rentalType: b.rentalType,
+            rentRackets: b.rentRackets,
+            rentBalls: b.rentBalls,
+            monthsCount: b.monthsCount
+          };
+        }
+        groups[b.bookingGroupId].bookings.push(b);
+        groups[b.bookingGroupId].totalPrice += b.totalPrice;
+        
+        if (b.notes && !groups[b.bookingGroupId].notes) {
+          groups[b.bookingGroupId].notes = b.notes;
+        }
+
+        // Consolidate status: if any is pending, overall is pending. 
+        // If all are canceled, overall is canceled. Otherwise, confirmed.
+        const groupBookings = groups[b.bookingGroupId].bookings;
+        const hasPending = groupBookings.some(cb => cb.status === 'pending');
+        const hasConfirmed = groupBookings.some(cb => cb.status === 'confirmed');
+        if (hasPending) {
+          groups[b.bookingGroupId].status = 'pending';
+        } else if (hasConfirmed) {
+          groups[b.bookingGroupId].status = 'confirmed';
+        } else {
+          groups[b.bookingGroupId].status = 'canceled';
+        }
+      } else {
+        singles.push({
+          id: b.id,
+          isGroup: false,
+          bookings: [b],
+          customerName: b.customerName,
+          customerPhone: b.customerPhone,
+          courtName: b.courtName,
+          courtId: b.courtId,
+          totalPrice: b.totalPrice,
+          createdAt: b.createdAt,
+          status: b.status,
+          paymentMethod: b.paymentMethod,
+          notes: b.notes,
+          useLights: b.useLights,
+          rentalType: b.rentalType,
+          rentRackets: b.rentRackets,
+          rentBalls: b.rentBalls,
+          monthsCount: b.monthsCount
+        });
+      }
+    });
+
+    const groupList = Object.values(groups);
+    const combined = [...groupList, ...singles];
+    return combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [filteredBookings]);
+
+  const toggleGroupExpand = (groupId: string) => {
+    setExpandedGroups(prev =>
+      prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId]
+    );
+  };
+
   // 1. Math Statistics computations
   const stats = useMemo(() => {
     const activeBookings = bookings.filter(b => b.status !== 'canceled');
@@ -368,16 +482,6 @@ export default function AdminView({
 
     return Object.values(data);
   }, [bookings, courts]);
-
-  // Filter Bookings list for display
-  const filteredBookings = useMemo(() => {
-    return bookings.filter(b => {
-      const matchStatus = bookingFilterStatus === 'all' || b.status === bookingFilterStatus;
-      const matchCourt = bookingFilterCourt === 'all' || b.courtId === bookingFilterCourt;
-      const matchDate = !bookingFilterDate || b.date === bookingFilterDate;
-      return matchStatus && matchCourt && matchDate;
-    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [bookings, bookingFilterStatus, bookingFilterCourt, bookingFilterDate]);
 
   const handleCreateCourt = (e: React.FormEvent) => {
     e.preventDefault();
@@ -613,7 +717,7 @@ export default function AdminView({
             </div>
 
             {/* Bookings Queue Grid render */}
-            {filteredBookings.length === 0 ? (
+            {groupedBookings.length === 0 ? (
               <div className="text-center py-16 bg-white border border-slate-200 rounded-2xl space-y-3">
                 <p className="text-slate-400 font-medium text-sm">Không thấy lịch đặt sân nào khớp với tiêu chuẩn lọc!</p>
                 <button
@@ -641,119 +745,184 @@ export default function AdminView({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {filteredBookings.map((booking) => (
-                        <tr key={booking.id} className="hover:bg-slate-50/50 transition-colors">
-                          
-                          {/* Client Detail */}
-                          <td className="p-4">
-                            <div className="font-extrabold text-slate-900">{booking.customerName}</div>
-                            <div className="text-xs text-slate-500">📞 {booking.customerPhone}</div>
-                            <div className="text-[10px] text-slate-400 mt-1 font-mono">Đăng ký ngày: {new Date(booking.createdAt).toLocaleDateString()}</div>
-                          </td>
+                      {groupedBookings.map((group) => {
+                        const isExpanded = expandedGroups.includes(group.id);
+                        return (
+                          <React.Fragment key={group.id}>
+                            <tr className="hover:bg-slate-50/50 transition-colors">
+                              
+                              {/* Client Detail */}
+                              <td className="p-4">
+                                <div className="font-extrabold text-slate-900">{group.customerName}</div>
+                                <div className="text-xs text-slate-500">📞 {group.customerPhone}</div>
+                                <div className="text-[10px] text-slate-400 mt-1 font-mono">
+                                  Đăng ký ngày: {new Date(group.createdAt).toLocaleDateString()}
+                                </div>
+                              </td>
 
-                          {/* Court & Play Date slot range */}
-                          <td className="p-4">
-                            <div className="font-bold text-slate-800">{booking.courtName}</div>
-                            <div className="text-xs font-semibold text-slate-900 mt-0.5 flex flex-wrap gap-1 items-center">
-                              <span className="bg-slate-100 border border-slate-250 font-extrabold text-slate-900 px-1.5 py-0.5 rounded">
-                                {ConvertVietnamDate(booking.date)}
-                              </span>
-                              <span className="bg-lime-100 font-black text-slate-900 px-1.5 py-0.5 rounded mr-1">
-                                {booking.timeSlot}
-                              </span>
-                            </div>
-                            
-                            <div className="flex flex-wrap gap-1.5 mt-1.5">
-                              {booking.useLights !== undefined && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-extrabold ${
-                                  booking.useLights 
-                                    ? 'bg-amber-100 text-amber-800 border border-amber-200' 
-                                    : 'bg-slate-100 text-slate-500'
-                                }`}>
-                                  ☀️ {booking.useLights ? 'Dùng đèn đêm' : 'Không dùng đèn'}
-                                </span>
-                              )}
-                              {booking.rentalType !== undefined && (
-                                <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-600 rounded font-bold">
-                                  👥 {booking.rentalType === 'monthly' ? 'Thuê cố định' : 'Thuê lẻ vãng lai'}
-                                </span>
-                              )}
-                              {(booking.rentRackets || booking.rentBalls) && (
-                                <span className="text-[10px] px-1.5 py-0.5 bg-lime-50 border border-lime-200/50 text-slate-700 rounded font-semibold whitespace-nowrap">
-                                  🛍️ {[booking.rentRackets ? 'Thuê vợt' : null, booking.rentBalls ? 'Mượn bóng' : null].filter(Boolean).join(', ')}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Pricing detailed & method details */}
-                          <td className="p-4">
-                            <div className="font-extrabold text-slate-900">{booking.totalPrice.toLocaleString('vi-VN')} VNĐ</div>
-                            <span className="inline-block mt-1 text-[10px] bg-slate-100 border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap">
-                              {booking.paymentMethod === 'bank_transfer' ? '🏦 CK Banking' : '💵 Trực tiếp sân'}
-                            </span>
-                          </td>
-
-                          {/* Extra info notes entered */}
-                          <td className="p-4 max-w-xs">
-                            <span className="text-slate-600 italic leading-relaxed text-xs">
-                              {booking.notes ? `"${booking.notes}"` : <span className="text-slate-300 font-normal">Không ghi chú</span>}
-                            </span>
-                          </td>
-
-                          {/* Status and interactive control operations */}
-                          <td className="p-4 text-right">
-                            <div className="flex items-center justify-end space-x-2">
-                              {booking.status === 'pending' ? (
-                                <>
-                                  <button
-                                    onClick={() => onConfirmBooking(booking.id)}
-                                    className="p-1 px-2.5 bg-slate-900 hover:bg-lime-400 hover:text-slate-900 text-white rounded-lg flex items-center space-x-1 font-bold text-xs shadow-sm transition-all cursor-pointer"
-                                    title="Duyệt đơn"
-                                    id={`btn-approve-${booking.id}`}
-                                  >
-                                    <Check className="w-3.5 h-3.5" />
-                                    <span>Duyệt</span>
-                                  </button>
-                                  <button
-                                    onClick={() => onRejectBooking(booking.id)}
-                                    className="p-1 px-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg flex items-center space-x-1 font-bold text-xs shadow-sm transition-all cursor-pointer"
-                                    title="Từ chối/Hủy"
-                                    id={`btn-deny-${booking.id}`}
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                    <span>Hủy</span>
-                                  </button>
-                                </>
-                              ) : (
-                                <div className="flex items-center space-x-1.5">
-                                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                                    booking.status === 'confirmed'
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : 'bg-rose-100 text-rose-800'
-                                  }`}>
-                                    {booking.status === 'confirmed' ? '✓ Đã duyệt' : '✕ Đã hủy'}
-                                  </span>
-                                  {booking.status === 'confirmed' && (
+                              {/* Court & Play Date slot range */}
+                              <td className="p-4">
+                                <div className="font-bold text-slate-800">{group.courtName}</div>
+                                {group.isGroup ? (
+                                  <div className="mt-1">
+                                    <div className="text-xs font-bold text-slate-900 flex flex-wrap gap-1 items-center">
+                                      <span className="bg-amber-100 border border-amber-250 font-black text-amber-950 px-1.5 py-0.5 rounded">
+                                        📅 Gói cố định ({group.bookings.length} buổi)
+                                      </span>
+                                    </div>
                                     <button
-                                      onClick={() => {
-                                        if (window.confirm('Hủy giao dịch lịch này?')) {
-                                          onRejectBooking(booking.id);
-                                        }
-                                      }}
-                                      className="p-1 text-rose-500 hover:text-white hover:bg-rose-500 rounded transition-all cursor-pointer"
-                                      title="Hủy đơn này"
+                                      onClick={() => toggleGroupExpand(group.id)}
+                                      className="mt-2 text-xs text-lime-600 hover:text-lime-700 font-black flex items-center gap-1 focus:outline-none cursor-pointer"
                                     >
-                                      <X className="w-3 h-3" />
+                                      {isExpanded ? 'Thu gọn lịch đặt ▴' : 'Xem chi tiết lịch đặt (' + group.bookings.length + ' buổi) ▾'}
                                     </button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div className="text-xs font-semibold text-slate-900 mt-0.5 flex flex-wrap gap-1 items-center">
+                                      <span className="bg-slate-100 border border-slate-250 font-extrabold text-slate-900 px-1.5 py-0.5 rounded">
+                                        {ConvertVietnamDate(group.bookings[0].date)}
+                                      </span>
+                                      <span className="bg-lime-100 font-black text-slate-900 px-1.5 py-0.5 rounded mr-1">
+                                        {group.bookings[0].timeSlot}
+                                      </span>
+                                    </div>
+                                  </>
+                                )}
+                                
+                                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                  {group.useLights !== undefined && (
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-extrabold ${
+                                      group.useLights 
+                                        ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                                        : 'bg-slate-100 text-slate-500'
+                                    }`}>
+                                      ☀️ {group.useLights ? 'Dùng đèn đêm' : 'Không dùng đèn'}
+                                    </span>
+                                  )}
+                                  {group.rentalType !== undefined && (
+                                    <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-600 rounded font-bold">
+                                      👥 {group.rentalType === 'monthly' ? 'Thuê cố định' : 'Thuê lẻ vãng lai'}
+                                    </span>
+                                  )}
+                                  {(group.rentRackets || group.rentBalls) && (
+                                    <span className="text-[10px] px-1.5 py-0.5 bg-lime-50 border border-lime-200/50 text-slate-700 rounded font-semibold whitespace-nowrap">
+                                      🛍️ {[group.rentRackets ? 'Thuê vợt' : null, group.rentBalls ? 'Mượn bóng' : null].filter(Boolean).join(', ')}
+                                    </span>
                                   )}
                                 </div>
-                              )}
-                            </div>
-                          </td>
+                              </td>
 
-                        </tr>
-                      ))}
+                              {/* Pricing detailed & method details */}
+                              <td className="p-4">
+                                <div className="font-extrabold text-slate-900">{group.totalPrice.toLocaleString('vi-VN')} VNĐ</div>
+                                <span className="inline-block mt-1 text-[10px] bg-slate-100 border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap">
+                                  {group.paymentMethod === 'bank_transfer' ? '🏦 CK Banking' : '💵 Trực tiếp sân'}
+                                </span>
+                              </td>
+
+                              {/* Extra info notes entered */}
+                              <td className="p-4 max-w-xs">
+                                <span className="text-slate-600 italic leading-relaxed text-xs">
+                                  {group.notes ? `"${group.notes}"` : <span className="text-slate-300 font-normal">Không ghi chú</span>}
+                                </span>
+                              </td>
+
+                              {/* Status and interactive control operations */}
+                              <td className="p-4 text-right">
+                                <div className="flex items-center justify-end space-x-2">
+                                  {group.status === 'pending' ? (
+                                    <>
+                                      <button
+                                        onClick={() => onConfirmBooking(group.bookings.map(b => b.id))}
+                                        className="p-1 px-2.5 bg-slate-900 hover:bg-lime-400 hover:text-slate-900 text-white rounded-lg flex items-center space-x-1 font-bold text-xs shadow-sm transition-all cursor-pointer"
+                                        title={group.isGroup ? "Duyệt toàn bộ gói cố định này" : "Duyệt đơn"}
+                                        id={`btn-approve-${group.id}`}
+                                      >
+                                        <Check className="w-3.5 h-3.5" />
+                                        <span>{group.isGroup ? "Duyệt Gói" : "Duyệt"}</span>
+                                      </button>
+                                      <button
+                                        onClick={() => onRejectBooking(group.bookings.map(b => b.id))}
+                                        className="p-1 px-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg flex items-center space-x-1 font-bold text-xs shadow-sm transition-all cursor-pointer"
+                                        title={group.isGroup ? "Hủy toàn bộ gói cố định này" : "Hủy đơn"}
+                                        id={`btn-deny-${group.id}`}
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                        <span>{group.isGroup ? "Hủy Gói" : "Hủy"}</span>
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <div className="flex items-center space-x-1.5">
+                                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                                        group.status === 'confirmed'
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : 'bg-rose-100 text-rose-800'
+                                      }`}>
+                                        {group.status === 'confirmed' ? '✓ Đã duyệt' : '✕ Đã hủy'}
+                                      </span>
+                                      {group.status === 'confirmed' && (
+                                        <button
+                                          onClick={() => {
+                                            const confirmMsg = group.isGroup 
+                                              ? 'Hủy toàn bộ gói đặt sân cố định này? Tất cả các buổi trong gói sẽ bị chuyển thành đã hủy.'
+                                              : 'Hủy giao dịch lịch này?';
+                                            if (window.confirm(confirmMsg)) {
+                                              onRejectBooking(group.bookings.map(b => b.id));
+                                            }
+                                          }}
+                                          className="p-1 text-rose-500 hover:text-white hover:bg-rose-500 rounded transition-all cursor-pointer"
+                                          title={group.isGroup ? "Hủy toàn bộ gói" : "Hủy đơn này"}
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+
+                            </tr>
+
+                            {/* Dropdown details of dates for grouped bookings */}
+                            {group.isGroup && isExpanded && (
+                              <tr className="bg-slate-50/70">
+                                <td colSpan={5} className="p-4 border-t border-slate-100">
+                                  <div className="font-bold text-[11px] text-slate-500 uppercase tracking-wider mb-2">
+                                    Chi tiết danh sách các buổi trong gói:
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                    {group.bookings.map((cb, idx) => (
+                                      <div 
+                                        key={cb.id} 
+                                        className="bg-white border border-slate-200 rounded-lg p-2.5 flex flex-col justify-between shadow-xs"
+                                      >
+                                        <div className="flex justify-between items-start">
+                                          <span className="text-xs font-extrabold text-slate-800">
+                                            Buổi {idx + 1}: {ConvertVietnamDate(cb.date)}
+                                          </span>
+                                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                            cb.status === 'confirmed' ? 'bg-emerald-100 text-emerald-800' :
+                                            cb.status === 'canceled' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                                          }`}>
+                                            {cb.status === 'confirmed' ? 'Đã duyệt' : cb.status === 'canceled' ? 'Đã hủy' : 'Chờ duyệt'}
+                                          </span>
+                                        </div>
+                                        <div className="mt-2 flex justify-between items-center text-xs">
+                                          <span className="text-slate-500 font-mono">🕒 {cb.timeSlot}</span>
+                                          <span className="font-extrabold text-slate-900">
+                                            {cb.totalPrice.toLocaleString('vi-VN')} đ
+                                          </span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

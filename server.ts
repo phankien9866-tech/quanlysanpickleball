@@ -10,22 +10,26 @@ import {
   fetchBookingsFromDb,
   saveBookingToDb,
   fetchBankConfigFromDb,
-  saveBankConfigToDb
+  saveBankConfigToDb,
+  fetchAdminPasswordFromDb,
+  saveAdminPasswordToDb
 } from "./src/db";
 
 const PORT = Number(process.env.PORT) || 3000;
 const DATA_FILE_PATH = path.join(process.cwd(), "data-store.json");
 const PASSWORD_FILE_PATH = path.join(process.cwd(), "src", "admin-password.txt");
 
+let cachedAdminPassword = "0911370429";
+
 function getAdminPassword(): string {
   try {
     if (fs.existsSync(PASSWORD_FILE_PATH)) {
-      return fs.readFileSync(PASSWORD_FILE_PATH, "utf-8").trim() || "0911370429";
+      return fs.readFileSync(PASSWORD_FILE_PATH, "utf-8").trim() || cachedAdminPassword;
     }
   } catch (err) {
     console.error("Error reading admin password file:", err);
   }
-  return "0911370429";
+  return cachedAdminPassword;
 }
 
 function saveAdminPassword(pwd: string) {
@@ -172,12 +176,15 @@ function saveDataToFile() {
 async function startServer() {
   // Load local data immediately on startup as cache fallback
   loadDataFromFile();
+  cachedAdminPassword = getAdminPassword();
 
   // Load and upgrade to standard cloud persistent database (Firebase Firestore)
   try {
     state.courts = await fetchCourtsFromDb(state.courts);
     state.bookings = await fetchBookingsFromDb(state.bookings);
     state.bankConfig = await fetchBankConfigFromDb(state.bankConfig);
+    cachedAdminPassword = await fetchAdminPasswordFromDb(cachedAdminPassword);
+    saveAdminPassword(cachedAdminPassword); // Sync back to local file
     // Write cloud data back to local storage as double-layered backup
     saveDataToFile();
     console.log("Database initialized successfully: Cloud persistence active and fully loaded.");
@@ -284,6 +291,23 @@ async function startServer() {
     res.json({ success: true, id, status });
   });
 
+  // API ROUTE: Update bulk booking status
+  app.patch("/api/bookings/bulk/status", (req, res) => {
+    const { bookingIds, status } = req.body;
+    if (!Array.isArray(bookingIds)) {
+      return res.status(400).json({ success: false, message: "bookingIds must be an array" });
+    }
+    state.bookings = state.bookings.map(b => bookingIds.includes(b.id) ? { ...b, status } : b);
+    saveDataToFile();
+    bookingIds.forEach(id => {
+      const updated = state.bookings.find(b => b.id === id);
+      if (updated) {
+        saveBookingToDb(updated).catch(console.error);
+      }
+    });
+    res.json({ success: true, count: bookingIds.length, status });
+  });
+
   // API ROUTE: Get bank config
   app.get("/api/bank-config", (req, res) => {
     res.json(state.bankConfig);
@@ -300,7 +324,7 @@ async function startServer() {
   // API ROUTE: Verify Admin Password
   app.post("/api/admin/verify-password", (req, res) => {
     const { password } = req.body;
-    const currentPassword = getAdminPassword();
+    const currentPassword = cachedAdminPassword || getAdminPassword();
     if (password === currentPassword) {
       res.json({ success: true });
     } else {
@@ -314,7 +338,10 @@ async function startServer() {
     if (!password || password.trim().length === 0) {
       return res.status(400).json({ success: false, message: "Mật khẩu không được để trống!" });
     }
-    saveAdminPassword(password);
+    const trimmed = password.trim();
+    cachedAdminPassword = trimmed;
+    saveAdminPassword(trimmed);
+    saveAdminPasswordToDb(trimmed).catch(console.error);
     res.json({ success: true, message: "Thay đổi mật khẩu thành công!" });
   });
 
