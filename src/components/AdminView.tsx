@@ -299,7 +299,7 @@ export default function AdminView({
   };
 
   // Booking Filters state for owner
-  const [bookingFilterStatus, setBookingFilterStatus] = useState<'all' | 'pending' | 'confirmed' | 'canceled'>('all');
+  const [bookingFilterStatus, setBookingFilterStatus] = useState<'all' | 'pending' | 'confirmed' | 'canceled' | 'cancelled'>('all');
   const [bookingFilterCourt, setBookingFilterCourt] = useState<'all' | string>('all');
   const [bookingFilterDate, setBookingFilterDate] = useState<string>('');
 
@@ -316,7 +316,7 @@ export default function AdminView({
     courtId: string;
     totalPrice: number;
     createdAt: string;
-    status: 'pending' | 'confirmed' | 'canceled';
+    status: 'pending' | 'confirmed' | 'canceled' | 'cancelled';
     paymentMethod: 'at_court' | 'bank_transfer';
     notes?: string;
     useLights?: boolean;
@@ -329,7 +329,10 @@ export default function AdminView({
   // Filter Bookings list for display
   const filteredBookings = useMemo(() => {
     return bookings.filter(b => {
-      const matchStatus = bookingFilterStatus === 'all' || b.status === bookingFilterStatus;
+      const matchStatus = bookingFilterStatus === 'all' || 
+        b.status === bookingFilterStatus ||
+        (bookingFilterStatus === 'canceled' && b.status === 'cancelled') ||
+        (bookingFilterStatus === 'cancelled' && b.status === 'canceled');
       const matchCourt = bookingFilterCourt === 'all' || b.courtId === bookingFilterCourt;
       const matchDate = !bookingFilterDate || b.date === bookingFilterDate;
       return matchStatus && matchCourt && matchDate;
@@ -381,7 +384,7 @@ export default function AdminView({
         } else if (hasConfirmed) {
           groups[b.bookingGroupId].status = 'confirmed';
         } else {
-          groups[b.bookingGroupId].status = 'canceled';
+          groups[b.bookingGroupId].status = 'cancelled';
         }
       } else {
         singles.push({
@@ -419,7 +422,7 @@ export default function AdminView({
 
   // 1. Math Statistics computations
   const stats = useMemo(() => {
-    const activeBookings = bookings.filter(b => b.status !== 'canceled');
+    const activeBookings = bookings.filter(b => b.status !== 'canceled' && b.status !== 'cancelled');
     const confirmedBookings = bookings.filter(b => b.status === 'confirmed');
     
     // Total Revenue from confirmed bookings only
@@ -891,9 +894,9 @@ export default function AdminView({
                                           </span>
                                           <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
                                             cb.status === 'confirmed' ? 'bg-emerald-100 text-emerald-800' :
-                                            cb.status === 'canceled' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                                            (cb.status === 'canceled' || cb.status === 'cancelled') ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
                                           }`}>
-                                            {cb.status === 'confirmed' ? 'Đã duyệt' : cb.status === 'canceled' ? 'Đã hủy' : 'Chờ duyệt'}
+                                            {cb.status === 'confirmed' ? 'Đã duyệt' : (cb.status === 'canceled' || cb.status === 'cancelled') ? 'Đã hủy' : 'Chờ duyệt'}
                                           </span>
                                         </div>
                                         <div className="mt-2 flex justify-between items-center text-xs">

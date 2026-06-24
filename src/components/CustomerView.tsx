@@ -276,7 +276,7 @@ export default function CustomerView({
   // Check if a time slot is already booked for the selected court and selected date
   const getUnavailableSlots = (courtId: string, date: string) => {
     return bookings
-      .filter(b => b.courtId === courtId && b.date === date && b.status !== 'canceled')
+      .filter(b => b.courtId === courtId && b.date === date && b.status !== 'canceled' && b.status !== 'cancelled')
       .map(b => b.timeSlot);
   };
 
@@ -421,7 +421,7 @@ export default function CustomerView({
     courtId: string;
     totalPrice: number;
     createdAt: string;
-    status: 'pending' | 'confirmed' | 'canceled';
+    status: 'pending' | 'confirmed' | 'canceled' | 'cancelled';
     notes?: string;
     timeSlot: string;
     date: string;
@@ -465,7 +465,7 @@ export default function CustomerView({
         } else if (hasConfirmed) {
           groups[b.bookingGroupId].status = 'confirmed';
         } else {
-          groups[b.bookingGroupId].status = 'canceled';
+          groups[b.bookingGroupId].status = 'cancelled';
         }
       } else {
         singles.push({
@@ -1544,11 +1544,11 @@ export default function CustomerView({
                           <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold ${
                             group.status === 'confirmed'
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : group.status === 'canceled'
+                              : (group.status === 'canceled' || group.status === 'cancelled')
                                 ? 'bg-rose-100 text-rose-800 border border-rose-200'
                                 : 'bg-amber-100 text-amber-800 border border-amber-200'
                           }`}>
-                            {group.status === 'confirmed' ? 'Đã duyệt' : group.status === 'canceled' ? 'Đã hủy' : 'Đang duyệt'}
+                            {group.status === 'confirmed' ? 'Đã duyệt' : (group.status === 'canceled' || group.status === 'cancelled') ? 'Đã hủy' : 'Đang duyệt'}
                           </span>
                         </div>
                       </div>
@@ -1595,11 +1595,11 @@ export default function CustomerView({
                                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                                       cb.status === 'confirmed'
                                         ? 'bg-emerald-100 text-emerald-800'
-                                        : cb.status === 'canceled'
+                                        : (cb.status === 'canceled' || cb.status === 'cancelled')
                                           ? 'bg-rose-100 text-rose-800'
                                           : 'bg-amber-100 text-amber-800'
                                     }`}>
-                                      {cb.status === 'confirmed' ? 'Duyệt' : cb.status === 'canceled' ? 'Hủy' : 'Chờ'}
+                                      {cb.status === 'confirmed' ? 'Duyệt' : (cb.status === 'canceled' || cb.status === 'cancelled') ? 'Hủy' : 'Chờ'}
                                     </span>
                                   </div>
                                 ))}
@@ -1610,7 +1610,7 @@ export default function CustomerView({
                       )}
 
                       {/* Cancel Booking Action if and only if not already completely canceled */}
-                      {group.status !== 'canceled' && (
+                      {group.status !== 'canceled' && group.status !== 'cancelled' && (
                         <div className="flex justify-end pt-1">
                           <button
                             onClick={() => {

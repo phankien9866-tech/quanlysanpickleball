@@ -238,7 +238,7 @@ export default function App() {
     // Optimistic UI update
     let updatedBookings: Booking[] = [];
     setBookings(prev => {
-      const updated = prev.map(b => ids.includes(b.id) ? { ...b, status: 'canceled' as const } : b);
+      const updated = prev.map(b => ids.includes(b.id) ? { ...b, status: 'cancelled' as const } : b);
       updatedBookings = updated;
       localStorage.setItem('pb_bookings', JSON.stringify(updated));
       return updated;
@@ -291,7 +291,7 @@ export default function App() {
     // Optimistic UI update
     let updatedBookings: Booking[] = [];
     setBookings(prev => {
-      const updated = prev.map(b => ids.includes(b.id) ? { ...b, status: 'canceled' as const } : b);
+      const updated = prev.map(b => ids.includes(b.id) ? { ...b, status: 'cancelled' as const } : b);
       updatedBookings = updated;
       localStorage.setItem('pb_bookings', JSON.stringify(updated));
       return updated;

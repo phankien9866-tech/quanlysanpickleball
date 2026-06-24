@@ -32,7 +32,7 @@ export interface Booking {
   date: string; // YYYY-MM-DD
   timeSlot: string; // "06:00 - 07:00", etc.
   totalPrice: number;
-  status: 'pending' | 'confirmed' | 'canceled';
+  status: 'pending' | 'confirmed' | 'canceled' | 'cancelled';
   createdAt: string;
   notes?: string;
   paymentMethod: 'at_court' | 'bank_transfer';
